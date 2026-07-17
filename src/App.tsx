@@ -3,6 +3,7 @@ import HostPage from './pages/HostPage';
 import JudgePage from './pages/JudgePage';
 import QuestionsPage from './pages/QuestionsPage';
 import ResultsPage from './pages/ResultsPage';
+import HealthPage from './pages/HealthPage';
 import './styles/globals.css';
 
 function App() {
@@ -14,6 +15,7 @@ function App() {
         <Route path="/judge" element={<JudgePage />} />
         <Route path="/questions" element={<QuestionsPage />} />
         <Route path="/results" element={<ResultsPage />} />
+        <Route path="/health" element={<HealthPage />} />
         <Route path="*" element={<Navigate to="/host" replace />} />
       </Routes>
     </Router>

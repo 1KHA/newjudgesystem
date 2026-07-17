@@ -1,5 +1,11 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { supabase } from '../lib/supabase';
+import {
+  healthStore,
+  HEALTH_CHECK_INTERVAL_MS,
+  WAKE_THRESHOLD_MS
+} from '../lib/connectionHealth';
+import { useConnectionHealth } from '../hooks/useConnectionHealth';
 import {
   getTeams,
   getQuestionBanks,
@@ -35,6 +41,14 @@ export default function HostPage() {
   const [editingTeamId, setEditingTeamId] = useState<string | null>(null);
   const [editingTeamName, setEditingTeamName] = useState<string>('');
 
+  // Connection health (shared store → visible on /health page too)
+  const health = useConnectionHealth();
+  // Refs so intervals/listeners never hold stale closures
+  const subscriptionCleanupRef = useRef<(() => void) | null>(null);
+  const reconnectRef = useRef<() => void>(() => {});
+  const sessionIdRef = useRef<string>(sessionId);
+  sessionIdRef.current = sessionId;
+
   // Load initial data
   useEffect(() => {
     loadInitialData();
@@ -48,6 +62,64 @@ export default function HostPage() {
       loadAnswers(sessionId);
     }
   }, [currentTeam, selectedQuestions.length, sessionId]);
+
+  // ✅ Fix #1: cleanup subscriptions when the component unmounts
+  useEffect(() => {
+    return () => {
+      if (subscriptionCleanupRef.current) {
+        console.log('🧹 Component unmounting, cleaning up subscriptions');
+        subscriptionCleanupRef.current();
+        subscriptionCleanupRef.current = null;
+      }
+    };
+  }, []);
+
+  // ✅ Fix #2: health monitoring — detect stale connections and reconnect
+  useEffect(() => {
+    const healthCheck = setInterval(() => {
+      if (sessionIdRef.current === 'لم تبدأ') return;
+      if (healthStore.isStale()) {
+        console.warn('⚠️ Connection appears stale (no heartbeat for 60s), reconnecting...');
+        reconnectRef.current();
+      }
+    }, HEALTH_CHECK_INTERVAL_MS);
+
+    return () => clearInterval(healthCheck);
+  }, []);
+
+  // ✅ Fix #3: device wake detection — reconnect after sleep / tab refocus
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (document.visibilityState !== 'visible') return;
+      if (sessionIdRef.current === 'لم تبدأ') return;
+
+      console.log('📱 Page became visible, checking connection...');
+      if (healthStore.isStale(WAKE_THRESHOLD_MS)) {
+        console.log('⚠️ Connection may be stale after sleep, reconnecting...');
+        healthStore.setStatus('reconnecting');
+        // Small delay to let the network stabilize after wake
+        setTimeout(() => reconnectRef.current(), 1000);
+      } else {
+        console.log('✅ Connection appears healthy');
+      }
+    };
+
+    const handleFocus = () => {
+      if (sessionIdRef.current === 'لم تبدأ') return;
+      console.log('🔍 Window focused, verifying connection...');
+      if (healthStore.isStale()) {
+        reconnectRef.current();
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    window.addEventListener('focus', handleFocus);
+
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      window.removeEventListener('focus', handleFocus);
+    };
+  }, []);
 
   const loadInitialData = async () => {
     try {
@@ -80,60 +152,125 @@ export default function HostPage() {
   };
 
   const subscribeToSession = (sessionId: string) => {
-    console.log('Setting up real-time subscriptions for session:', sessionId);
-    
+    console.log('🔌 Setting up real-time subscriptions for session:', sessionId, 'at', new Date().toISOString());
+
+    // ✅ Fix #1: clean up old subscriptions FIRST so channels never leak
+    if (subscriptionCleanupRef.current) {
+      console.log('🧹 Cleaning up old subscriptions');
+      subscriptionCleanupRef.current();
+      subscriptionCleanupRef.current = null;
+    }
+
+    healthStore.startSession(sessionId);
+
     // Subscribe to judges changes
+    const judgesChannelName = `judges-${sessionId}`;
+    healthStore.registerChannel(judgesChannelName);
     const judgesChannel = supabase
-      .channel(`judges-${sessionId}`)
+      .channel(judgesChannelName)
       .on('postgres_changes',
         { event: '*', schema: 'public', table: 'judges', filter: `session_id=eq.${sessionId}` },
         (payload) => {
           console.log('Judge change detected:', payload);
+          healthStore.noteChannelEvent(judgesChannelName); // ✅ Fix #4: heartbeat on activity
           loadJudges(sessionId);
         }
       )
       .subscribe((status) => {
-        console.log('Judges channel status:', status);
+        console.log('👥 Judges channel status:', status, 'at', new Date().toISOString());
+        healthStore.updateChannelStatus(judgesChannelName, status);
+        // ✅ Fix #2/#7: track connection status + auto-retry on error
+        if (status === 'SUBSCRIBED') {
+          healthStore.setStatus('connected');
+        } else if (status === 'CLOSED' || status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+          healthStore.setStatus('disconnected');
+          if (status === 'CHANNEL_ERROR') {
+            setTimeout(() => {
+              console.log('🔄 Auto-retrying connection after channel error...');
+              reconnectRef.current();
+            }, 5000);
+          }
+        }
       });
 
     // Subscribe to answers changes
+    const answersChannelName = `answers-${sessionId}`;
+    healthStore.registerChannel(answersChannelName);
     const answersChannel = supabase
-      .channel(`answers-${sessionId}`)
+      .channel(answersChannelName)
       .on('postgres_changes',
         { event: '*', schema: 'public', table: 'answers', filter: `session_id=eq.${sessionId}` },
         (payload) => {
           console.log('Answer change detected:', payload);
+          healthStore.noteChannelEvent(answersChannelName); // ✅ Fix #4: heartbeat on activity
           loadAnswers(sessionId);
         }
       )
       .subscribe((status) => {
-        console.log('Answers channel status:', status);
+        console.log('📝 Answers channel status:', status, 'at', new Date().toISOString());
+        healthStore.updateChannelStatus(answersChannelName, status);
       });
 
     // Subscribe to results changes
+    const resultsChannelName = `results-${sessionId}`;
+    healthStore.registerChannel(resultsChannelName);
     const resultsChannel = supabase
-      .channel(`results-${sessionId}`)
+      .channel(resultsChannelName)
       .on('postgres_changes',
         { event: '*', schema: 'public', table: 'session_results', filter: `session_id=eq.${sessionId}` },
         (payload) => {
           console.log('Results change detected:', payload);
+          healthStore.noteChannelEvent(resultsChannelName); // ✅ Fix #4: heartbeat on activity
           loadLeaderboard(sessionId);
         }
       )
       .subscribe((status) => {
-        console.log('Results channel status:', status);
+        console.log('🏆 Results channel status:', status, 'at', new Date().toISOString());
+        healthStore.updateChannelStatus(resultsChannelName, status);
       });
 
-    return () => {
-      console.log('Cleaning up real-time subscriptions');
+    // ✅ Fix #1: STORE the cleanup function so old channels are always closed
+    subscriptionCleanupRef.current = () => {
+      console.log('🧹 Unsubscribing from all channels');
+      healthStore.removeChannel(judgesChannelName);
+      healthStore.removeChannel(answersChannelName);
+      healthStore.removeChannel(resultsChannelName);
       judgesChannel.unsubscribe();
       answersChannel.unsubscribe();
       resultsChannel.unsubscribe();
     };
   };
 
+  // ✅ Fix #2: full reconnect — close old channels, resubscribe, reload data
+  const reconnectSubscriptions = useCallback(() => {
+    const currentSessionId = sessionIdRef.current;
+    if (currentSessionId === 'لم تبدأ') return;
+
+    console.log('🔄 Reconnecting subscriptions...');
+    healthStore.noteReconnect();
+    healthStore.setStatus('reconnecting');
+
+    if (subscriptionCleanupRef.current) {
+      subscriptionCleanupRef.current();
+      subscriptionCleanupRef.current = null;
+    }
+
+    subscribeToSession(currentSessionId);
+
+    // Reload data so nothing is missed while disconnected
+    loadJudges(currentSessionId);
+    loadAnswers(currentSessionId);
+    loadLeaderboard(currentSessionId);
+
+    healthStore.heartbeat();
+    console.log('✅ Reconnection complete');
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  reconnectRef.current = reconnectSubscriptions;
+
   const loadJudges = async (sessionId: string) => {
     try {
+      healthStore.heartbeat(); // ✅ Fix #4: heartbeat on successful data load
       const judgesData = await getJudgesBySession(sessionId);
       setJudges(judgesData);
     } catch (error) {
@@ -143,6 +280,7 @@ export default function HostPage() {
 
   const loadAnswers = async (sessionId: string) => {
     try {
+      healthStore.heartbeat(); // ✅ Fix #4: heartbeat on successful data load
       const answersData = await getAnswersBySession(sessionId);
       const judgesData = await getJudgesBySession(sessionId);
       
@@ -187,6 +325,7 @@ export default function HostPage() {
 
   const loadLeaderboard = async (sessionId: string) => {
     try {
+      healthStore.heartbeat(); // ✅ Fix #4: heartbeat on successful data load
       // Always calculate from real-time answers for live sessions
       // This ensures we show weighted points as they come in
       await calculateLeaderboardFromAnswers(sessionId);
@@ -336,6 +475,13 @@ export default function HostPage() {
         current_team_id: 'completed'
       });
       
+      // ✅ Clean up realtime subscriptions when the session ends
+      if (subscriptionCleanupRef.current) {
+        subscriptionCleanupRef.current();
+        subscriptionCleanupRef.current = null;
+      }
+      healthStore.endSession();
+
       // Clear local state but DON'T delete from database
       localStorage.removeItem('hostSessionId');
       localStorage.removeItem('hostToken');
@@ -565,9 +711,36 @@ export default function HostPage() {
     <div className="container">
       <div className="header">
         <h1>إدارة التحكيم</h1>
-        <div className="session-badge">
-          <span>معرف الجلسة:</span>
-          <span>{sessionId}</span>
+        <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
+          <div className="session-badge">
+            <span>معرف الجلسة:</span>
+            <span>{sessionId}</span>
+          </div>
+
+          {/* ✅ Fix #5: Connection Status Indicator */}
+          <a
+            href="/health"
+            title="عرض صفحة صحة الاتصال"
+            style={{
+              padding: '8px 16px',
+              borderRadius: '8px',
+              background: health.status === 'connected' ? '#10b981' :
+                          health.status === 'reconnecting' ? '#f59e0b' : '#ef4444',
+              color: 'white',
+              fontSize: '12px',
+              fontWeight: 600,
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px',
+              textDecoration: 'none'
+            }}
+          >
+            <span>{health.status === 'connected' ? '🟢' : health.status === 'reconnecting' ? '🟡' : '🔴'}</span>
+            <span>
+              {health.status === 'connected' ? 'متصل' :
+               health.status === 'reconnecting' ? 'إعادة الاتصال...' : 'غير متصل'}
+            </span>
+          </a>
         </div>
       </div>
 
@@ -887,6 +1060,33 @@ export default function HostPage() {
                 {judges.filter(j => judgeSubmissions[j.id] === selectedQuestions.length).length}/{judges.length} أرسلوا
               </div>
             )}
+
+            {/* ✅ Fix #6: Manual Refresh Button */}
+            {sessionId !== 'لم تبدأ' && (
+              <button
+                onClick={() => {
+                  console.log('🔄 Manual refresh triggered');
+                  reconnectSubscriptions();
+                }}
+                style={{
+                  padding: '6px 12px',
+                  background: 'var(--primary-color)',
+                  color: 'white',
+                  border: 'none',
+                  borderRadius: '8px',
+                  cursor: 'pointer',
+                  fontSize: '12px',
+                  fontWeight: 600,
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '4px'
+                }}
+                title="تحديث الاتصال"
+              >
+                <span>🔄</span>
+                <span>تحديث</span>
+              </button>
+            )}
           </div>
           <ul className="judge-list" style={{ listStyle: 'none', padding: 0, margin: 0 }}>
             {judges.length === 0 ? (
@@ -1026,6 +1226,10 @@ export default function HostPage() {
           <a href="/results" className="btn btn-primary">
             <span>📊</span>
             عرض النتائج
+          </a>
+          <a href="/health" className="btn btn-secondary">
+            <span>💓</span>
+            صحة الاتصال
           </a>
         </div>
       </div>
