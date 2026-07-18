@@ -36,6 +36,14 @@ export default function SetupPage() {
   const [selectedBank, setSelectedBank] = useState<string>('');
   const [selectedQuestions, setSelectedQuestions] = useState<string[]>([]);
 
+  // Step 2 — optional inline "create a new bank" form
+  const [showBankForm, setShowBankForm] = useState(false);
+  const [newBankName, setNewBankName] = useState('');
+  const [newBankQuestions, setNewBankQuestions] = useState<
+    { text: string; choices: { text: string; weight: number }[] }[]
+  >([{ text: '', choices: [{ text: '', weight: 1 }, { text: '', weight: 1 }] }]);
+  const [savingBank, setSavingBank] = useState(false);
+
   // Step 3 — session + judges
   const [sessionId, setSessionId] = useState<string>('');
   const [judges, setJudges] = useState<Judge[]>([]);
@@ -177,6 +185,94 @@ export default function SetupPage() {
     setSelectedBank(bankId);
     setSelectedQuestions([]);
     setQuestions(bankId ? allQuestions.filter(q => q.bank_id === bankId) : allQuestions);
+  };
+
+  // ---- Step 2 (optional): create a new question bank inline ----
+
+  const addNewBankQuestion = () => {
+    setNewBankQuestions(prev => [...prev, { text: '', choices: [{ text: '', weight: 1 }, { text: '', weight: 1 }] }]);
+  };
+
+  const removeNewBankQuestion = (index: number) => {
+    setNewBankQuestions(prev => prev.filter((_, i) => i !== index));
+  };
+
+  const updateNewBankQuestionText = (index: number, text: string) => {
+    setNewBankQuestions(prev => prev.map((q, i) => i === index ? { ...q, text } : q));
+  };
+
+  const updateNewBankChoiceText = (qIndex: number, cIndex: number, text: string) => {
+    setNewBankQuestions(prev => prev.map((q, i) => {
+      if (i !== qIndex) return q;
+      const choices = q.choices.map((c, ci) => ci === cIndex ? { ...c, text } : c);
+      return { ...q, choices };
+    }));
+  };
+
+  const addNewBankChoice = (qIndex: number) => {
+    setNewBankQuestions(prev => prev.map((q, i) =>
+      i === qIndex ? { ...q, choices: [...q.choices, { text: '', weight: 1 }] } : q
+    ));
+  };
+
+  const removeNewBankChoice = (qIndex: number) => {
+    setNewBankQuestions(prev => prev.map((q, i) => {
+      if (i !== qIndex || q.choices.length <= 1) return q;
+      return { ...q, choices: q.choices.slice(0, -1) };
+    }));
+  };
+
+  const resetBankForm = () => {
+    setNewBankName('');
+    setNewBankQuestions([{ text: '', choices: [{ text: '', weight: 1 }, { text: '', weight: 1 }] }]);
+  };
+
+  const handleCreateBank = async () => {
+    if (!newBankName.trim()) {
+      alert('يرجى إدخال اسم بنك الأسئلة');
+      return;
+    }
+    const validQuestions = newBankQuestions.filter(q => q.text.trim() && q.choices.every(c => c.text.trim()));
+    if (validQuestions.length === 0) {
+      alert('أضف سؤالًا واحدًا على الأقل بنص وخيارات كاملة');
+      return;
+    }
+
+    setSavingBank(true);
+    try {
+      const { data: bank, error: bankError } = await supabase
+        .from('question_banks')
+        .insert({ name: newBankName.trim() })
+        .select()
+        .single();
+      if (bankError) throw bankError;
+
+      const { data: insertedQuestions, error: questionsError } = await supabase
+        .from('questions')
+        .insert(validQuestions.map(q => ({
+          text: q.text.trim(),
+          choices: q.choices.map(c => ({ text: c.text.trim(), weight: c.weight })),
+          section: 'عام',
+          weight: 1,
+          bank_id: bank.id
+        })))
+        .select();
+      if (questionsError) throw questionsError;
+
+      resetBankForm();
+      setShowBankForm(false);
+      await loadInitialData();
+      // New bank only contains what we just inserted — select it directly
+      // rather than re-deriving from `allQuestions`, which is still stale here.
+      setSelectedBank(bank.id);
+      setQuestions((insertedQuestions || []) as Question[]);
+      setSelectedQuestions((insertedQuestions || []).map(q => q.id));
+    } catch (error) {
+      console.error('Error creating question bank:', error);
+      alert('خطأ في إنشاء بنك الأسئلة');
+    } finally {
+      setSavingBank(false);
+    }
   };
 
   // ---- Step 3: create session + judge link ----
@@ -449,6 +545,74 @@ export default function SetupPage() {
           <p style={{ color: 'var(--text-secondary)', fontSize: '14px', marginTop: 0 }}>
             اختر بنك الأسئلة ثم حدد الأسئلة التي ستُرسل للمحكمين.
           </p>
+
+          {/* Optional: create a new bank inline, same pattern as adding teams above */}
+          <div style={{ marginBottom: '20px', padding: '16px', background: 'var(--secondary-light)', borderRadius: '8px' }}>
+            <button
+              className="btn btn-secondary"
+              onClick={() => setShowBankForm(prev => !prev)}
+              style={{ width: '100%' }}
+            >
+              <span>{showBankForm ? '✕' : '➕'}</span>
+              {showBankForm ? 'إلغاء' : 'إنشاء بنك أسئلة جديد (اختياري)'}
+            </button>
+
+            {showBankForm && (
+              <div style={{ marginTop: '16px' }}>
+                <label style={{ display: 'block', marginBottom: '8px', fontWeight: 500 }}>اسم بنك الأسئلة</label>
+                <input
+                  type="text"
+                  value={newBankName}
+                  onChange={(e) => setNewBankName(e.target.value)}
+                  placeholder="مثال: أسئلة الجولة الأولى"
+                  style={{ width: '100%', padding: '8px 12px', border: '2px solid var(--border-color)', borderRadius: '6px', marginBottom: '16px' }}
+                />
+
+                {newBankQuestions.map((q, qIdx) => (
+                  <div key={qIdx} style={{ background: 'white', border: '2px solid var(--border-color)', borderRadius: '8px', padding: '12px', marginBottom: '12px' }}>
+                    <div style={{ display: 'flex', gap: '8px', marginBottom: '8px' }}>
+                      <textarea
+                        value={q.text}
+                        onChange={(e) => updateNewBankQuestionText(qIdx, e.target.value)}
+                        placeholder={`نص السؤال ${qIdx + 1}`}
+                        style={{ flex: 1, padding: '8px', border: '2px solid var(--border-color)', borderRadius: '6px', fontSize: '14px', minHeight: '50px', resize: 'vertical' }}
+                      />
+                      {newBankQuestions.length > 1 && (
+                        <button className="btn btn-danger btn-sm" onClick={() => removeNewBankQuestion(qIdx)} title="حذف السؤال">🗑️</button>
+                      )}
+                    </div>
+                    {q.choices.map((c, cIdx) => (
+                      <div key={cIdx} style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px' }}>
+                        <span style={{ color: 'var(--primary-color)' }}>•</span>
+                        <input
+                          type="text"
+                          value={c.text}
+                          onChange={(e) => updateNewBankChoiceText(qIdx, cIdx, e.target.value)}
+                          placeholder={`خيار ${cIdx + 1}`}
+                          style={{ flex: 1, padding: '6px 8px', border: '2px solid var(--border-color)', borderRadius: '6px', fontSize: '13px' }}
+                        />
+                      </div>
+                    ))}
+                    <div style={{ display: 'flex', gap: '8px' }}>
+                      <button className="btn btn-secondary btn-sm" onClick={() => addNewBankChoice(qIdx)}>➕ خيار</button>
+                      {q.choices.length > 1 && (
+                        <button className="btn btn-secondary btn-sm" onClick={() => removeNewBankChoice(qIdx)}>➖ خيار</button>
+                      )}
+                    </div>
+                  </div>
+                ))}
+
+                <div style={{ display: 'flex', gap: '8px' }}>
+                  <button className="btn btn-secondary" onClick={addNewBankQuestion} style={{ flex: 1 }}>
+                    <span>➕</span> إضافة سؤال آخر
+                  </button>
+                  <button className="btn btn-success" onClick={handleCreateBank} disabled={savingBank} style={{ flex: 1 }}>
+                    <span>💾</span> {savingBank ? 'جاري الحفظ...' : 'حفظ البنك'}
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
 
           <label htmlFor="bankSelect">بنك الأسئلة:</label>
           <select
