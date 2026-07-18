@@ -42,3 +42,7 @@ migrate.js
 insert-teams.sql 
 *.sql 
 /mdfiles
+seed-admin.js
+drop-judge-name-constraint.sql
+.env.localold
+src/types/database.types.ts
