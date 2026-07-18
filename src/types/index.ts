@@ -40,6 +40,7 @@ export interface Session {
   name: string;
   session_id: string;
   host_token?: string;
+  host_id?: string; // auth.users id of the admin who owns this session
   current_team_index: number;
   teams: string[];
   current_questions?: Question[];

@@ -1,6 +1,8 @@
 import { useState, useEffect } from 'react';
+import { useParams } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
-import { getOrCreateJudge, getJudge, submitAnswer, getLatestSession } from '../lib/supabaseService';
+import { getOrCreateJudge, getJudge, submitAnswer, getLatestSession, getSession } from '../lib/supabaseService';
+import { normalizeSessionParam } from '../lib/sessionRouting';
 import type { Question } from '../types';
 
 // Predefined list of judge names
@@ -17,6 +19,11 @@ const JUDGE_NAMES = [
 ];
 
 export default function JudgePage() {
+  // Unique session link support: /judge/:sessionId locks this device to that session
+  const { sessionId: sessionParam } = useParams();
+  const urlSessionId = normalizeSessionParam(sessionParam);
+  const invalidLink = Boolean(sessionParam) && !urlSessionId;
+
   const [sessionId, setSessionId] = useState<string>('لم تبدأ');
   const [judgeName, setJudgeName] = useState<string>('');
   const [judgeId, setJudgeId] = useState<string>('');
@@ -29,22 +36,38 @@ export default function JudgePage() {
 
   useEffect(() => {
     checkExistingSession();
-    fetchLatestSessionId();
+    fetchTargetSessionId();
     subscribeToSessionChanges();
   }, []);
 
-  const fetchLatestSessionId = async () => {
+  // When opened via /judge/:sessionId, join THAT session (multi-session isolation).
+  // Otherwise keep the old behavior: the most recently created session.
+  const fetchTargetSessionId = async () => {
     try {
+      if (urlSessionId) {
+        const session = await getSession(urlSessionId);
+        if (session && session.current_team_id !== 'completed') {
+          setSessionId(session.session_id);
+        } else {
+          setSessionId('رابط غير صالح');
+        }
+        return;
+      }
       const latestSession = await getLatestSession();
       if (latestSession) {
         setSessionId(latestSession.session_id);
       }
     } catch (error) {
-      console.error('Error fetching latest session:', error);
+      console.error('Error fetching session:', error);
     }
   };
 
   const subscribeToSessionChanges = () => {
+    // A unique-link judge is locked to its session — skip latest-session discovery entirely
+    if (urlSessionId) {
+      return () => {};
+    }
+
     console.log('Subscribing to session changes...');
     
     // Polling fallback - check for new sessions every 5 seconds
@@ -322,12 +345,16 @@ export default function JudgePage() {
     try {
       console.log('Attempting to join game...');
       
-      // Fetch the latest active session
-      const latestSession = await getLatestSession();
-      console.log('Latest session:', latestSession);
+      // Join the session from the unique link, or fall back to the latest session
+      const latestSession = urlSessionId
+        ? await getSession(urlSessionId)
+        : await getLatestSession();
+      console.log('Target session:', latestSession);
       
-      if (!latestSession) {
-        alert('لا توجد جلسة نشطة حالياً. يرجى الانتظار حتى يبدأ المضيف جلسة جديدة.');
+      if (!latestSession || latestSession.current_team_id === 'completed') {
+        alert(urlSessionId
+          ? 'رابط الجلسة غير صالح أو الجلسة منتهية. تحقق من الرابط مع المضيف.'
+          : 'لا توجد جلسة نشطة حالياً. يرجى الانتظار حتى يبدأ المضيف جلسة جديدة.');
         return;
       }
 
@@ -542,6 +569,21 @@ export default function JudgePage() {
               <span>معرف الجلسة:</span>
               <span>{sessionId}</span>
             </div>
+
+            {(invalidLink || sessionId === 'رابط غير صالح') && (
+              <div style={{
+                background: '#fef2f2',
+                border: '1px solid #ef4444',
+                color: '#ef4444',
+                padding: '10px 12px',
+                borderRadius: '8px',
+                marginBottom: '16px',
+                fontSize: '14px',
+                fontWeight: 600
+              }}>
+                ⚠️ رابط الجلسة غير صالح أو الجلسة منتهية — تحقق من الرابط مع المضيف
+              </div>
+            )}
 
             <div style={{ marginBottom: '20px', textAlign: 'right' }}>
               <label style={{

@@ -54,6 +54,7 @@ export const createSession = async (sessionData: {
   name: string;
   session_id: string;
   host_token: string;
+  host_id?: string;
   teams: string[];
   total_points: number;
 }): Promise<Session> => {
@@ -67,8 +68,19 @@ export const createSession = async (sessionData: {
   return data;
 };
 
-export const getSession = async (sessionId: string): Promise<Session | null> => {
+/** All sessions owned by a given admin (newest first) */
+export const getSessionsByHost = async (hostId: string): Promise<Session[]> => {
   const { data, error } = await supabase
+    .from('sessions')
+    .select('*')
+    .eq('host_id', hostId)
+    .order('created_at', { ascending: false });
+
+  if (error) throw error;
+  return data || [];
+};
+
+export const getSession = async (sessionId: string): Promise<Session | null> => {const { data, error } = await supabase
     .from('sessions')
     .select('*')
     .eq('session_id', sessionId)

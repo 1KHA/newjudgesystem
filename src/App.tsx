@@ -1,5 +1,9 @@
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
-import HostPage from './pages/HostPage';
+import RequireAuth from './components/RequireAuth';
+import LoginPage from './pages/LoginPage';
+import DashboardPage from './pages/DashboardPage';
+import SetupPage from './pages/SetupPage';
+import ControlPage from './pages/ControlPage';
 import JudgePage from './pages/JudgePage';
 import QuestionsPage from './pages/QuestionsPage';
 import ResultsPage from './pages/ResultsPage';
@@ -11,11 +15,20 @@ function App() {
     <Router>
       <Routes>
         <Route path="/" element={<Navigate to="/host" replace />} />
-        <Route path="/host" element={<HostPage />} />
+
+        {/* Public */}
+        <Route path="/login" element={<LoginPage />} />
         <Route path="/judge" element={<JudgePage />} />
-        <Route path="/questions" element={<QuestionsPage />} />
-        <Route path="/results" element={<ResultsPage />} />
-        <Route path="/health" element={<HealthPage />} />
+        <Route path="/judge/:sessionId" element={<JudgePage />} />
+
+        {/* Admin only */}
+        <Route path="/host" element={<RequireAuth><DashboardPage /></RequireAuth>} />
+        <Route path="/host/new" element={<RequireAuth><SetupPage /></RequireAuth>} />
+        <Route path="/host/:sessionId/control" element={<RequireAuth><ControlPage /></RequireAuth>} />
+        <Route path="/questions" element={<RequireAuth><QuestionsPage /></RequireAuth>} />
+        <Route path="/results" element={<RequireAuth><ResultsPage /></RequireAuth>} />
+        <Route path="/health" element={<RequireAuth><HealthPage /></RequireAuth>} />
+
         <Route path="*" element={<Navigate to="/host" replace />} />
       </Routes>
     </Router>
