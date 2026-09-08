@@ -18,8 +18,9 @@ function App() {
 
         {/* Public */}
         <Route path="/login" element={<LoginPage />} />
-        <Route path="/judge" element={<JudgePage />} />
+        {/* Judges join ONLY through the per-session link shared by the host */}
         <Route path="/judge/:sessionId" element={<JudgePage />} />
+        <Route path="/judge" element={<JudgePage />} />
 
         {/* Admin only */}
         <Route path="/host" element={<RequireAuth><DashboardPage /></RequireAuth>} />

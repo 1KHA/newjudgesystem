@@ -15,7 +15,7 @@ import {
 import { useAuth } from '../hooks/useAuth';
 import { getSessionsByHost } from '../lib/supabaseService';
 import BrandHeader from '../components/BrandHeader';
-import type { Session } from '../types';
+import type { SessionSummary } from '../types';
 
 /**
  * Admin dashboard — "جلساتي".
@@ -24,7 +24,7 @@ import type { Session } from '../types';
 export default function DashboardPage() {
   const { user, signOut } = useAuth();
   const navigate = useNavigate();
-  const [sessions, setSessions] = useState<Session[]>([]);
+  const [sessions, setSessions] = useState<SessionSummary[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
@@ -55,11 +55,11 @@ export default function DashboardPage() {
     }
   };
 
-  const isActive = (s: Session) => s.current_team_id !== 'completed';
+  const isActive = (s: SessionSummary) => s.status !== 'completed';
   const activeSessions = sessions.filter(isActive);
   const pastSessions = sessions.filter(s => !isActive(s));
 
-  const renderSessionRow = (session: Session, active: boolean) => (
+  const renderSessionRow = (session: SessionSummary, active: boolean) => (
     <li key={session.id} className={`list-row ${active ? 'list-row--active' : ''}`}>
       <div className="list-row__main">
         <span className={`badge badge-dot ${active ? 'badge-success badge-pulse' : 'badge-neutral'}`}>
@@ -74,7 +74,7 @@ export default function DashboardPage() {
         </span>
         <span className="list-row__meta">
           <Users />
-          {session.teams?.length ?? 0} فريق
+          {session.team_count} فريق
         </span>
       </div>
       <div className="list-row__actions">

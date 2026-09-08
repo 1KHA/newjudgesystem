@@ -1,500 +1,246 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
-import { supabase } from '../lib/supabase';
-import { useAuth } from '../hooks/useAuth';
-import {
-  healthStore,
-  HEALTH_CHECK_INTERVAL_MS,
-  WAKE_THRESHOLD_MS
-} from '../lib/connectionHealth';
-import { useConnectionHealth } from '../hooks/useConnectionHealth';
-import {
-  getSession,
-  updateSession,
-  getJudgesBySession,
-  getAnswersBySession,
-  getQuestionBanks,
-  getQuestions,
-  upsertSessionResult
-} from '../lib/supabaseService';
-import type { Question, QuestionBank, Judge, Answer, LeaderboardEntry, AnswersByTeam, Session } from '../types';
 import {
   ArrowRight, Users, Send, Scale, FileText, Trophy, Plus, BarChart3, HeartPulse,
-  Wifi, WifiOff, RefreshCw, ChevronLeft, ChevronRight, Square, CheckCircle2, Clock, UserRound
+  Wifi, WifiOff, RefreshCw, ChevronLeft, ChevronRight, Square, CheckCircle2, Clock, UserRound,
+  Copy, Check, Link2
 } from 'lucide-react';
+import { supabase } from '../lib/supabase';
+import { useAuth } from '../hooks/useAuth';
+import { healthStore } from '../lib/connectionHealth';
+import { useConnectionHealth } from '../hooks/useConnectionHealth';
+import { RealtimeManager } from '../lib/realtimeManager';
+import {
+  getSessionDetail, getSession, setCurrentTeam as saveCurrentTeam, finishSession,
+  getJudgesBySession, getTeamProgress, getTeamAnswers, getLeaderboard
+} from '../lib/supabaseService';
 import BrandHeader from '../components/BrandHeader';
 import LoadingScreen from '../components/LoadingScreen';
+import type { SessionDetail, Judge, JudgeProgress, TeamAnswerRow, LeaderboardEntry } from '../types';
+
+/** Leaderboard safety refresh (cheap server aggregate). */
+const LEADERBOARD_REFRESH_MS = 30_000;
+/** Collapse bursts of answer events (50 judges x N questions) into one refresh. */
+const ANSWER_DEBOUNCE_MS = 400;
 
 /**
- * Session control room — everything beyond the 3 setup steps lives here:
- * team navigation, sending questions to judges, submission tracking,
- * answers, leaderboard, connection health, ending the session.
+ * Session control room.
+ *
+ * Every query here is bounded: judges (one row per judge), per-team progress
+ * and answers (judges x questions rows), and a server-side leaderboard
+ * aggregate. Nothing grows with the total number of answers in the session.
  */
 export default function ControlPage() {
   const { sessionId = '' } = useParams();
   const { user } = useAuth();
   const navigate = useNavigate();
-
-  const [session, setSession] = useState<Session | null>(null);
-  const [authorized, setAuthorized] = useState<boolean | null>(null); // null = loading
-
-  const [currentTeam, setCurrentTeam] = useState<string>('لا يوجد');
-  const [currentTeamIndex, setCurrentTeamIndex] = useState<number>(0);
-
-  // Questions prepared during setup (same-device handoff via sessionStorage)
-  const [preparedQuestions, setPreparedQuestions] = useState<Question[]>([]);
-  // Fallback selector (used when resuming a session without prepared questions)
-  const [questionBanks, setQuestionBanks] = useState<QuestionBank[]>([]);
-  const [questions, setQuestions] = useState<Question[]>([]);
-  const [allQuestions, setAllQuestions] = useState<Question[]>([]);
-  const [selectedBank, setSelectedBank] = useState<string>('');
-  const [selectedQuestionIds, setSelectedQuestionIds] = useState<string[]>([]);
-
-  const [sentForTeam, setSentForTeam] = useState<string>(''); // which team questions were last sent to
-  const [sentCount, setSentCount] = useState<number>(0);
-
-  const [judges, setJudges] = useState<Judge[]>([]);
-  const [answers, setAnswers] = useState<AnswersByTeam>({});
-  const [leaderboard, setLeaderboard] = useState<LeaderboardEntry[]>([]);
-  const [judgeSubmissions, setJudgeSubmissions] = useState<{ [judgeId: string]: number }>({});
-
-  // Connection health (shared store visible on /health page too)
   const health = useConnectionHealth();
-  const subscriptionCleanupRef = useRef<(() => void) | null>(null);
-  const reconnectRef = useRef<() => void>(() => {});
-  const sessionIdRef = useRef<string>(sessionId);
-  sessionIdRef.current = sessionId;
+
+  const [session, setSession] = useState<SessionDetail | null>(null);
+  const [authorized, setAuthorized] = useState<boolean | null>(null);
+  const [currentTeamIndex, setCurrentTeamIndex] = useState(0);
+  const [judges, setJudges] = useState<Judge[]>([]);
+  const [progress, setProgress] = useState<JudgeProgress>({});
+  const [teamAnswers, setTeamAnswers] = useState<TeamAnswerRow[]>([]);
+  const [leaderboard, setLeaderboard] = useState<LeaderboardEntry[]>([]);
+  const [switching, setSwitching] = useState(false);
+  const [ending, setEnding] = useState(false);
+  const [copied, setCopied] = useState(false);
+  const [lastBroadcastOk, setLastBroadcastOk] = useState<boolean | null>(null);
+
+  const managerRef = useRef<RealtimeManager | null>(null);
+  const teamRef = useRef<string | null>(null);
+  const answerTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const teams = session?.teams ?? [];
-  const questionsToSend = preparedQuestions.length > 0
-    ? preparedQuestions
-    : questions.filter(q => selectedQuestionIds.includes(q.id));
-  const totalQuestions = sentCount > 0 ? sentCount : questionsToSend.length;
+  const questions = session?.questions ?? [];
+  const currentTeam = teams[currentTeamIndex] ?? null;
+  teamRef.current = currentTeam;
 
-  // ---- Load + authorize ----
+  // ---------------------------------------------------------------- loaders --
+
+  const loadJudges = useCallback(async () => {
+    try { setJudges(await getJudgesBySession(sessionId)); healthStore.heartbeat(); }
+    catch (e) { console.error('Error loading judges:', e); }
+  }, [sessionId]);
+
+  const loadTeamData = useCallback(async () => {
+    const team = teamRef.current;
+    if (!team) return;
+    try {
+      const [p, a] = await Promise.all([getTeamProgress(sessionId, team), getTeamAnswers(sessionId, team)]);
+      // Ignore results that arrived after the team changed
+      if (teamRef.current !== team) return;
+      setProgress(p);
+      setTeamAnswers(a);
+      healthStore.heartbeat();
+    } catch (e) { console.error('Error loading team data:', e); }
+  }, [sessionId]);
+
+  const loadLeaderboard = useCallback(async () => {
+    try { setLeaderboard(await getLeaderboard(sessionId)); healthStore.heartbeat(); }
+    catch (e) { console.error('Error loading leaderboard:', e); }
+  }, [sessionId]);
+
+  const refreshAll = useCallback(() => {
+    void loadJudges(); void loadTeamData(); void loadLeaderboard();
+  }, [loadJudges, loadTeamData, loadLeaderboard]);
+
+  const scheduleAnswerRefresh = useCallback(() => {
+    if (answerTimer.current) clearTimeout(answerTimer.current);
+    answerTimer.current = setTimeout(() => { void loadTeamData(); void loadLeaderboard(); }, ANSWER_DEBOUNCE_MS);
+  }, [loadTeamData, loadLeaderboard]);
+
+  // ------------------------------------------------------ load + authorize --
+
   useEffect(() => {
-    const init = async () => {
-      if (!sessionId || !user) return;
+    if (!sessionId || !user) return;
+    let cancelled = false;
+    (async () => {
       try {
-        const data = await getSession(sessionId);
+        const data = await getSessionDetail(sessionId);
+        if (cancelled) return;
         if (!data || data.host_id !== user.id) {
           alert('هذه الجلسة غير موجودة أو لا تملك صلاحية التحكم بها');
           navigate('/host', { replace: true });
           return;
         }
-        if (data.current_team_id === 'completed') {
+        if (data.status === 'completed') {
           alert('هذه الجلسة منتهية');
           navigate('/host', { replace: true });
           return;
         }
         setSession(data);
+        const idx = data.current_team_id ? Math.max(0, data.teams.indexOf(data.current_team_id)) : 0;
+        setCurrentTeamIndex(idx);
         setAuthorized(true);
-
-        // Restore current team
-        const teamFromDb = data.current_team_id && data.current_team_id !== 'completed'
-          ? data.current_team_id
-          : data.teams?.[0] || 'لا يوجد';
-        setCurrentTeam(teamFromDb);
-        setCurrentTeamIndex(Math.max(0, data.teams?.indexOf(teamFromDb) ?? 0));
-
-        // Restore "sent" state
-        if (data.current_questions && data.current_questions.length > 0) {
-          setSentForTeam(teamFromDb);
-          setSentCount(data.current_questions.length);
-        }
-
-        // Prepared questions from setup
-        try {
-          const stored = sessionStorage.getItem(`controlQuestions_${sessionId}`);
-          if (stored) setPreparedQuestions(JSON.parse(stored));
-        } catch { /* ignore malformed storage */ }
-
-        subscribeToSession(sessionId);
-        await loadJudges(sessionId);
-        await loadAnswers(sessionId);
-      } catch (error) {
-        console.error('Error loading session:', error);
+      } catch (e) {
+        console.error('Error loading session:', e);
         alert('خطأ في تحميل الجلسة');
         navigate('/host', { replace: true });
       }
-    };
-    init();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sessionId, user]);
+    })();
+    return () => { cancelled = true; };
+  }, [sessionId, user, navigate]);
 
-  // Load fallback question selector only if no prepared questions
+  // ------------------------------------------------------- realtime wiring --
+
   useEffect(() => {
-    if (authorized && preparedQuestions.length === 0) {
-      (async () => {
-        try {
-          const [banksData, questionsData] = await Promise.all([getQuestionBanks(), getQuestions()]);
-          setQuestionBanks(banksData);
-          setAllQuestions(questionsData);
-          setQuestions(questionsData);
-        } catch (error) {
-          console.error('Error loading question banks:', error);
-        }
-      })();
-    }
-  }, [authorized, preparedQuestions.length]);
+    if (!authorized) return;
 
-  // Recalculate judge submissions when team changes
-  useEffect(() => {
-    if (authorized && currentTeam !== 'لا يوجد') {
-      loadAnswers(sessionId);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentTeam, totalQuestions, authorized]);
-
-  // Cleanup subscriptions when the component unmounts
-  useEffect(() => {
-    return () => {
-      if (subscriptionCleanupRef.current) {
-        console.log('Component unmounting, cleaning up subscriptions');
-        subscriptionCleanupRef.current();
-        subscriptionCleanupRef.current = null;
-      }
-    };
-  }, []);
-
-  // Health monitoring — detect stale connections and reconnect
-  useEffect(() => {
-    const healthCheck = setInterval(() => {
-      if (!sessionIdRef.current) return;
-      if (healthStore.isStale()) {
-        console.warn('Connection appears stale (no heartbeat for 60s), reconnecting...');
-        reconnectRef.current();
-      }
-    }, HEALTH_CHECK_INTERVAL_MS);
-    return () => clearInterval(healthCheck);
-  }, []);
-
-  // Device wake detection — reconnect after sleep / tab refocus
-  useEffect(() => {
-    const handleVisibilityChange = () => {
-      if (document.visibilityState !== 'visible' || !sessionIdRef.current) return;
-      console.log('Page became visible, checking connection...');
-      if (healthStore.isStale(WAKE_THRESHOLD_MS)) {
-        console.log('Connection may be stale after sleep, reconnecting...');
-        healthStore.setStatus('reconnecting');
-        setTimeout(() => reconnectRef.current(), 1000);
-      }
-    };
-    const handleFocus = () => {
-      if (!sessionIdRef.current) return;
-      if (healthStore.isStale()) reconnectRef.current();
-    };
-    document.addEventListener('visibilitychange', handleVisibilityChange);
-    window.addEventListener('focus', handleFocus);
-    return () => {
-      document.removeEventListener('visibilitychange', handleVisibilityChange);
-      window.removeEventListener('focus', handleFocus);
-    };
-  }, []);
-
-  // ---- Realtime subscriptions (with health wiring) ----
-
-  const subscribeToSession = (sid: string) => {
-    console.log('Setting up real-time subscriptions for session:', sid, 'at', new Date().toISOString());
-
-    if (subscriptionCleanupRef.current) {
-      console.log('Cleaning up old subscriptions');
-      subscriptionCleanupRef.current();
-      subscriptionCleanupRef.current = null;
-    }
-
-    healthStore.startSession(sid);
-
-    const judgesChannelName = `judges-${sid}`;
-    healthStore.registerChannel(judgesChannelName);
-    const judgesChannel = supabase
-      .channel(judgesChannelName)
-      .on('postgres_changes',
-        { event: '*', schema: 'public', table: 'judges', filter: `session_id=eq.${sid}` },
-        (payload) => {
-          console.log('Judge change detected:', payload);
-          healthStore.noteChannelEvent(judgesChannelName);
-          loadJudges(sid);
-        }
-      )
-      .subscribe((status) => {
-        console.log('Judges channel status:', status, 'at', new Date().toISOString());
-        healthStore.updateChannelStatus(judgesChannelName, status);
-        if (status === 'SUBSCRIBED') {
-          healthStore.setStatus('connected');
-        } else if (status === 'CLOSED' || status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
-          healthStore.setStatus('disconnected');
-          if (status === 'CHANNEL_ERROR') {
-            setTimeout(() => {
-              console.log('Auto-retrying connection after channel error...');
-              reconnectRef.current();
-            }, 5000);
-          }
-        }
-      });
-
-    const answersChannelName = `answers-${sid}`;
-    healthStore.registerChannel(answersChannelName);
-    const answersChannel = supabase
-      .channel(answersChannelName)
-      .on('postgres_changes',
-        { event: '*', schema: 'public', table: 'answers', filter: `session_id=eq.${sid}` },
-        (payload) => {
-          console.log('Answer change detected:', payload);
-          healthStore.noteChannelEvent(answersChannelName);
-          loadAnswers(sid);
-        }
-      )
-      .subscribe((status) => {
-        console.log('Answers channel status:', status, 'at', new Date().toISOString());
-        healthStore.updateChannelStatus(answersChannelName, status);
-      });
-
-    const resultsChannelName = `results-${sid}`;
-    healthStore.registerChannel(resultsChannelName);
-    const resultsChannel = supabase
-      .channel(resultsChannelName)
-      .on('postgres_changes',
-        { event: '*', schema: 'public', table: 'session_results', filter: `session_id=eq.${sid}` },
-        (payload) => {
-          console.log('Results change detected:', payload);
-          healthStore.noteChannelEvent(resultsChannelName);
-          loadLeaderboard(sid);
-        }
-      )
-      .subscribe((status) => {
-        console.log('Results channel status:', status, 'at', new Date().toISOString());
-        healthStore.updateChannelStatus(resultsChannelName, status);
-      });
-
-    subscriptionCleanupRef.current = () => {
-      console.log('Unsubscribing from all channels');
-      healthStore.removeChannel(judgesChannelName);
-      healthStore.removeChannel(answersChannelName);
-      healthStore.removeChannel(resultsChannelName);
-      judgesChannel.unsubscribe();
-      answersChannel.unsubscribe();
-      resultsChannel.unsubscribe();
-    };
-  };
-
-  const reconnectSubscriptions = useCallback(() => {
-    const currentSessionId = sessionIdRef.current;
-    if (!currentSessionId) return;
-
-    console.log('Reconnecting subscriptions...');
-    healthStore.noteReconnect();
-    healthStore.setStatus('reconnecting');
-
-    if (subscriptionCleanupRef.current) {
-      subscriptionCleanupRef.current();
-      subscriptionCleanupRef.current = null;
-    }
-
-    subscribeToSession(currentSessionId);
-    loadJudges(currentSessionId);
-    loadAnswers(currentSessionId);
-    loadLeaderboard(currentSessionId);
-
-    healthStore.heartbeat();
-    console.log('Reconnection complete');
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-  reconnectRef.current = reconnectSubscriptions;
-
-  // ---- Data loaders ----
-
-  const loadJudges = async (sid: string) => {
-    try {
-      healthStore.heartbeat();
-      const judgesData = await getJudgesBySession(sid);
-      setJudges(judgesData);
-    } catch (error) {
-      console.error('Error loading judges:', error);
-    }
-  };
-
-  const loadAnswers = async (sid: string) => {
-    try {
-      healthStore.heartbeat();
-      const answersData = await getAnswersBySession(sid);
-      const judgesData = await getJudgesBySession(sid);
-
-      const judgeMap = new Map(judgesData.map(judge => [judge.id, judge.name]));
-
-      const grouped: AnswersByTeam = {};
-      answersData.forEach(answer => {
-        const teamName = answer.team_id;
-        if (!grouped[teamName]) grouped[teamName] = [];
-        grouped[teamName].push({
-          player: judgeMap.get(answer.judge_id) || answer.judge_id,
-          answer: answer.answer
-        });
-      });
-      setAnswers(grouped);
-
-      const submissions: { [judgeId: string]: number } = {};
-      answersData
-        .filter(answer => answer.team_id === currentTeam)
-        .forEach(answer => {
-          submissions[answer.judge_id] = (submissions[answer.judge_id] || 0) + 1;
-        });
-      setJudgeSubmissions(submissions);
-
-      await loadLeaderboard(sid);
-    } catch (error) {
-      console.error('Error loading answers:', error);
-    }
-  };
-
-  const loadLeaderboard = async (sid: string) => {
-    try {
-      healthStore.heartbeat();
-      const answersData = await getAnswersBySession(sid);
-
-      const teamScores: { [key: string]: number } = {};
-      answersData.forEach(answer => {
-        teamScores[answer.team_id] = (teamScores[answer.team_id] || 0) + (answer.points || 1);
-      });
-
-      const leaderboardData = Object.entries(teamScores)
-        .map(([teamName, totalPoints]) => ({ teamName, totalPoints }))
-        .sort((a, b) => b.totalPoints - a.totalPoints);
-
-      setLeaderboard(leaderboardData);
-    } catch (error) {
-      console.error('Error calculating leaderboard:', error);
-    }
-  };
-
-  // ---- Session control actions ----
-
-  const handlePreviousTeam = async () => {
-    if (teams.length === 0) return;
-    const newIndex = currentTeamIndex > 0 ? currentTeamIndex - 1 : teams.length - 1;
-    setCurrentTeamIndex(newIndex);
-    setCurrentTeam(teams[newIndex]);
-    await updateSession(sessionId, {
-      current_team_index: newIndex,
-      current_team_id: teams[newIndex]
+    healthStore.startSession(sessionId);
+    const manager = new RealtimeManager({
+      client: supabase,
+      ping: async () => {
+        const s = await getSession(sessionId);
+        if (!s) throw new Error('session missing');
+      },
+      onResync: refreshAll
     });
-  };
+    managerRef.current = manager;
 
-  const handleNextTeam = async () => {
-    if (teams.length === 0) return;
-    const newIndex = currentTeamIndex < teams.length - 1 ? currentTeamIndex + 1 : 0;
-    setCurrentTeamIndex(newIndex);
-    setCurrentTeam(teams[newIndex]);
-    await updateSession(sessionId, {
-      current_team_index: newIndex,
-      current_team_id: teams[newIndex]
-    });
-  };
+    manager.start([
+      {
+        name: `session-${sessionId}`,
+        // Host joins the broadcast channel so it can send team changes on it
+        configure: (ch) => ch.on('broadcast', { event: 'team-change' }, () => {
+          healthStore.noteChannelEvent(`session-${sessionId}`);
+        })
+      },
+      {
+        name: `judges-${sessionId}`,
+        configure: (ch) => ch.on('postgres_changes',
+          { event: '*', schema: 'public', table: 'judges', filter: `session_id=eq.${sessionId}` },
+          () => { healthStore.noteChannelEvent(`judges-${sessionId}`); void loadJudges(); })
+      },
+      {
+        name: `answers-${sessionId}`,
+        configure: (ch) => ch.on('postgres_changes',
+          { event: '*', schema: 'public', table: 'answers', filter: `session_id=eq.${sessionId}` },
+          () => { healthStore.noteChannelEvent(`answers-${sessionId}`); scheduleAnswerRefresh(); })
+      }
+    ]);
 
-  const handleSendQuestions = async () => {
-    if (questionsToSend.length === 0) {
-      alert('يرجى اختيار سؤال واحد على الأقل');
-      return;
-    }
-    if (currentTeam === 'لا يوجد') {
-      alert('يرجى اختيار فريق أولاً');
-      return;
-    }
+    refreshAll();
+    const lbTimer = setInterval(() => void loadLeaderboard(), LEADERBOARD_REFRESH_MS);
 
+    return () => {
+      clearInterval(lbTimer);
+      if (answerTimer.current) clearTimeout(answerTimer.current);
+      manager.stop();
+      managerRef.current = null;
+      healthStore.endSession();
+    };
+  }, [authorized, sessionId, refreshAll, loadJudges, loadLeaderboard, scheduleAnswerRefresh]);
+
+  // Team changed -> reload the bounded per-team data
+  useEffect(() => {
+    if (authorized && currentTeam) { setProgress({}); setTeamAnswers([]); void loadTeamData(); }
+  }, [authorized, currentTeam, loadTeamData]);
+
+  // --------------------------------------------------------------- actions --
+
+  const announceTeam = useCallback(async (team: string, status: 'active' | 'completed' = 'active') => {
+    const ok = await managerRef.current?.broadcast(`session-${sessionId}`, 'team-change', {
+      currentTeam: team, status, sentAt: Date.now()
+    }).catch(() => false);
+    setLastBroadcastOk(Boolean(ok));
+  }, [sessionId]);
+
+  const goToTeam = async (index: number) => {
+    if (!teams.length || switching) return;
+    const team = teams[index];
+    setSwitching(true);
     try {
-      await updateSession(sessionId, {
-        current_questions: questionsToSend,
-        current_team_id: currentTeam
-      });
-
-      const channel = supabase.channel(`session-${sessionId}`, {
-        config: { broadcast: { self: true } }
-      });
-      await new Promise((resolve) => {
-        channel.subscribe((status) => {
-          if (status === 'SUBSCRIBED') resolve(true);
-        });
-      });
-      await channel.send({
-        type: 'broadcast',
-        event: 'new-questions',
-        payload: { questions: questionsToSend, currentTeam, teamId: currentTeam }
-      });
-      setTimeout(() => channel.unsubscribe(), 1000);
-
-      setSentForTeam(currentTeam);
-      setSentCount(questionsToSend.length);
-      console.log('Questions broadcasted successfully to team:', currentTeam);
-    } catch (error) {
-      console.error('Error sending questions:', error);
-      alert('خطأ في إرسال الأسئلة');
+      // 1. Persist: judges' database channel and poll both pick this up
+      await saveCurrentTeam(sessionId, index, team);
+      setCurrentTeamIndex(index);
+      // 2. Broadcast: instant path for connected judges
+      await announceTeam(team);
+    } catch (e) {
+      console.error('Error switching team:', e);
+      alert('خطأ في تغيير الفريق، حاول مرة أخرى');
+    } finally {
+      setSwitching(false);
     }
   };
+
+  const handlePreviousTeam = () => goToTeam(currentTeamIndex > 0 ? currentTeamIndex - 1 : teams.length - 1);
+  const handleNextTeam = () => goToTeam(currentTeamIndex < teams.length - 1 ? currentTeamIndex + 1 : 0);
+  const handleResend = () => currentTeam && announceTeam(currentTeam);
 
   const handleEndSession = async () => {
     if (!confirm('هل أنت متأكد من إنهاء الجلسة؟ سيتم حفظ النتائج النهائية.')) return;
-
+    setEnding(true);
     try {
-      const answersData = await getAnswersBySession(sessionId);
-
-      const teamScores: { [key: string]: { answers: Answer[], totalPoints: number } } = {};
-      answersData.forEach(answer => {
-        if (!teamScores[answer.team_id]) {
-          teamScores[answer.team_id] = { answers: [], totalPoints: 0 };
-        }
-        teamScores[answer.team_id].answers.push(answer);
-        teamScores[answer.team_id].totalPoints += (answer.points || 1);
-      });
-
-      const savePromises = Object.entries(teamScores).map(([teamId, data]) =>
-        upsertSessionResult({
-          session_id: sessionId,
-          team_id: teamId,
-          total_points: data.totalPoints,
-          details: {
-            answers: data.answers.map(a => ({
-              questionId: a.question_id,
-              answer: a.answer,
-              points: a.points || 1,
-              judgeId: a.judge_id,
-              timestamp: a.created_at
-            }))
-          }
-        })
-      );
-      await Promise.all(savePromises);
-
-      await updateSession(sessionId, { current_team_id: 'completed' });
-
-      if (subscriptionCleanupRef.current) {
-        subscriptionCleanupRef.current();
-        subscriptionCleanupRef.current = null;
-      }
-      healthStore.endSession();
-      sessionStorage.removeItem(`controlQuestions_${sessionId}`);
-
-      alert(`تم إنهاء الجلسة وحفظ النتائج بنجاح!\nعدد الفرق: ${Object.keys(teamScores).length}\nإجمالي الإجابات: ${answersData.length}`);
+      const n = await finishSession(sessionId);
+      await announceTeam(currentTeam ?? '', 'completed');
+      alert(`تم إنهاء الجلسة وحفظ نتائج ${n} فريق بنجاح`);
       navigate('/host', { replace: true });
-    } catch (error) {
-      console.error('Error ending session:', error);
-      alert('خطأ في إنهاء الجلسة: ' + (error as Error).message);
+    } catch (e) {
+      console.error('Error ending session:', e);
+      alert('خطأ في إنهاء الجلسة: ' + (e as Error).message);
+    } finally {
+      setEnding(false);
     }
   };
 
-  const handleBankChange = (bankId: string) => {
-    setSelectedBank(bankId);
-    setSelectedQuestionIds([]);
-    setQuestions(bankId ? allQuestions.filter(q => q.bank_id === bankId) : allQuestions);
+  const judgeUrl = `${window.location.origin}/judge/${sessionId}`;
+  const handleCopyLink = async () => {
+    try {
+      await navigator.clipboard.writeText(judgeUrl);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch { prompt('انسخ الرابط:', judgeUrl); }
   };
 
-  // ---- Render ----
+  // ---------------------------------------------------------------- render --
 
-  if (authorized === null) {
-    return <LoadingScreen message="جاري تحميل الجلسة..." />;
-  }
+  if (authorized === null) return <LoadingScreen message="جاري تحميل الجلسة..." />;
 
-  const allSubmitted = judges.length > 0 && totalQuestions > 0 &&
-    judges.every(j => judgeSubmissions[j.id] === totalQuestions);
+  const totalQuestions = questions.length;
+  const doneJudges = judges.filter((j) => (progress[j.id]?.answered ?? 0) >= totalQuestions && totalQuestions > 0);
+  const allSubmitted = judges.length > 0 && doneJudges.length === judges.length;
 
   const connMeta = {
     connected: { icon: Wifi, label: 'متصل', cls: 'conn-chip--connected' },
@@ -524,167 +270,117 @@ export default function ControlPage() {
         <div className="page-head">
           <div>
             <h1>التحكم بجلسة التحكيم</h1>
-            <p>اختر الفريق، أرسل الأسئلة، وتابع إرسالات المحكمين في الوقت الفعلي.</p>
+            <p>انتقل بين الفرق، وتابع إرسالات المحكمين والنتائج في الوقت الفعلي.</p>
+          </div>
+          <div className="page-head__actions">
+            <button className={`btn btn-sm btn-pill ${copied ? 'btn-success' : 'btn-secondary'}`} onClick={handleCopyLink}>
+              {copied ? <Check /> : <Copy />}
+              {copied ? 'تم النسخ' : 'نسخ رابط المحكمين'}
+            </button>
           </div>
         </div>
 
-        {/* Step-by-step control guide */}
         <div className="card card--flat mb-6" style={{ padding: '14px 20px' }}>
           <div className="stepper">
             <span className="step step--active"><span className="step__num">١</span> اختر الفريق الحالي</span>
             <span className="step__arrow"><ChevronLeft /></span>
-            <span className="step"><span className="step__num">٢</span> أرسل الأسئلة</span>
+            <span className="step"><span className="step__num">٢</span> يصل الفريق للمحكمين تلقائياً</span>
             <span className="step__arrow"><ChevronLeft /></span>
-            <span className="step"><span className="step__num">٣</span> تابع إرسالات المحكمين</span>
-            <span className="step__arrow"><ChevronLeft /></span>
-            <span className="step"><span className="step__num">٤</span> انتقل للفريق التالي وكرر</span>
+            <span className="step"><span className="step__num">٣</span> تابع الإرسالات ثم انتقل للتالي</span>
           </div>
         </div>
 
         <div className="dashboard-grid">
-          {/* Current Team Card */}
+          {/* Current Team */}
           <div className="card">
             <div className="card-header">
               <div className="card-title">
                 <div className="card-icon"><Users /></div>
-                <span>الفريق الحالي ({currentTeamIndex + 1}/{teams.length})</span>
+                <span>الفريق الحالي ({teams.length ? currentTeamIndex + 1 : 0}/{teams.length})</span>
               </div>
+              {lastBroadcastOk === false && (
+                <span className="badge badge-warning" title="الرسالة الفورية لم تصل، المحكمون سيحصلون على الفريق خلال ثوانٍ عبر المزامنة">
+                  <Clock />
+                  مزامنة بطيئة
+                </span>
+              )}
             </div>
             <div className="team-display">
               <div className="team-display__label">يتم تحكيم</div>
-              <div className="team-name">{currentTeam}</div>
+              <div className="team-name">{currentTeam ?? 'لا يوجد'}</div>
             </div>
-            {sentForTeam === currentTeam && currentTeam !== 'لا يوجد' && (
-              <div className="alert alert-success mb-3">
-                <CheckCircle2 />
-                <span>تم إرسال {sentCount} سؤال لهذا الفريق إلى المحكمين</span>
-              </div>
-            )}
+            <p className="card-desc">
+              {totalQuestions} سؤال لكل فريق. عند الانتقال لفريق يصل للمحكمين فوراً، ومن ينقطع اتصاله يتزامن تلقائياً.
+            </p>
             <div className="btn-group">
-              <button className="btn btn-secondary" onClick={handlePreviousTeam}>
+              <button className="btn btn-secondary" onClick={handlePreviousTeam} disabled={switching}>
                 <ChevronRight />
                 السابق
               </button>
-              <button className="btn btn-secondary" onClick={handleNextTeam}>
+              <button className="btn btn-primary" onClick={handleNextTeam} disabled={switching}>
                 التالي
                 <ChevronLeft />
               </button>
-              <button className="btn btn-danger" onClick={handleEndSession}>
+              <button className="btn btn-outline" onClick={handleResend} disabled={!currentTeam} title="إعادة إرسال الفريق الحالي للمحكمين">
+                <Send />
+                إعادة إرسال
+              </button>
+              <button className="btn btn-danger" onClick={handleEndSession} disabled={ending}>
                 <Square />
-                إنهاء
+                {ending ? 'جاري الإنهاء...' : 'إنهاء'}
               </button>
             </div>
           </div>
 
-          {/* Send Questions Card */}
-          <div className="card">
-            <div className="card-header">
-              <div className="card-title">
-                <div className="card-icon"><Send /></div>
-                <span>إرسال الأسئلة</span>
-              </div>
-            </div>
-
-            {preparedQuestions.length > 0 ? (
-              <>
-                <p className="card-desc">
-                  الأسئلة المجهزة من صفحة الإعداد ({preparedQuestions.length} سؤال) ستُرسل للفريق الحالي: <strong>{currentTeam}</strong>
-                </p>
-                <ol style={{ maxHeight: '220px', overflowY: 'auto', paddingInlineStart: '22px', fontSize: '14px' }}>
-                  {preparedQuestions.map(q => (
-                    <li key={q.id} className="mb-2">{q.text}</li>
-                  ))}
-                </ol>
-              </>
-            ) : (
-              <>
-                <div className="field">
-                  <label htmlFor="bankSelect">بنك الأسئلة</label>
-                  <select id="bankSelect" value={selectedBank} onChange={(e) => handleBankChange(e.target.value)}>
-                    <option value="">جميع الأسئلة</option>
-                    {questionBanks.map(bank => (
-                      <option key={bank.id} value={bank.id}>{bank.name}</option>
-                    ))}
-                  </select>
-                </div>
-                <div className="field">
-                  <label htmlFor="questionSelect">اختر الأسئلة</label>
-                  <select
-                    id="questionSelect"
-                    multiple
-                    value={selectedQuestionIds}
-                    onChange={(e) => {
-                      const selected = Array.from(e.target.selectedOptions, option => option.value);
-                      setSelectedQuestionIds(selected);
-                    }}
-                  >
-                    {questions.map(question => (
-                      <option key={question.id} value={question.id}>{question.text}</option>
-                    ))}
-                  </select>
-                </div>
-              </>
-            )}
-
-            <button className="btn btn-primary btn-lg btn-block mt-3" onClick={handleSendQuestions}>
-              <Send />
-              إرسال {questionsToSend.length > 0 ? `(${questionsToSend.length} سؤال)` : 'الأسئلة'} إلى {currentTeam}
-            </button>
-          </div>
-
-          {/* Judges Card */}
+          {/* Judges */}
           <div className="card">
             <div className="card-header">
               <div className="card-title">
                 <div className="card-icon"><Scale /></div>
-                <span>المحكمون المتصلون</span>
+                <span>المحكمون ({judges.length})</span>
               </div>
               <div className="flex gap-2 items-center">
                 {judges.length > 0 && totalQuestions > 0 && (
                   <span className={`badge ${allSubmitted ? 'badge-success' : 'badge-warning'}`}>
-                    {judges.filter(j => judgeSubmissions[j.id] === totalQuestions).length}/{judges.length} أرسلوا
+                    {doneJudges.length}/{judges.length} أكملوا
                   </span>
                 )}
                 <button
                   className="btn btn-outline btn-sm btn-pill"
-                  onClick={() => {
-                    console.log('Manual refresh triggered');
-                    reconnectSubscriptions();
-                  }}
-                  title="تحديث الاتصال"
+                  onClick={() => { void managerRef.current?.reconnectAll('manual refresh'); }}
+                  title="إعادة الاتصال وتحديث البيانات"
                 >
                   <RefreshCw />
                   تحديث
                 </button>
               </div>
             </div>
-            <ul className="list-plain">
+            <ul className="list-plain" style={{ maxHeight: '420px', overflowY: 'auto' }}>
               {judges.length === 0 ? (
                 <li className="empty-state">
-                  <Scale />
-                  لا يوجد محكمون متصلون
+                  <Link2 />
+                  <h3>لا يوجد محكمون بعد</h3>
+                  <p>شارك رابط المحكمين من الزر أعلى الصفحة</p>
                 </li>
               ) : (
-                judges.map(judge => {
-                  const judgeAnswerCount = judgeSubmissions[judge.id] || 0;
-                  const hasSubmitted = totalQuestions > 0 && judgeAnswerCount === totalQuestions;
-                  const rowCls = hasSubmitted ? 'list-row--success' : (totalQuestions > 0 ? 'list-row--warning' : '');
-                  const avatarCls = hasSubmitted ? 'avatar--success' : (totalQuestions > 0 ? 'avatar--warning' : '');
-
+                judges.map((judge) => {
+                  const answered = progress[judge.id]?.answered ?? 0;
+                  const done = totalQuestions > 0 && answered >= totalQuestions;
+                  const started = answered > 0;
+                  const rowCls = done ? 'list-row--success' : started ? 'list-row--warning' : '';
+                  const avatarCls = done ? 'avatar--success' : started ? 'avatar--warning' : '';
                   return (
                     <li key={judge.id} className={`list-row ${rowCls}`}>
                       <div className="list-row__main">
                         <span className={`avatar ${avatarCls}`}>
-                          {hasSubmitted ? <CheckCircle2 /> : (totalQuestions > 0 ? <Clock /> : <UserRound />)}
+                          {done ? <CheckCircle2 /> : started ? <Clock /> : <UserRound />}
                         </span>
                         <span className="fw-600">{judge.name}</span>
                       </div>
-                      {totalQuestions > 0 && (
-                        <span className={`badge ${hasSubmitted ? 'badge-success' : 'badge-warning'}`}>
-                          {hasSubmitted ? 'تم الإرسال' : 'قيد الإجابة'}
-                          <span className="mono">{judgeAnswerCount}/{totalQuestions}</span>
-                        </span>
-                      )}
+                      <span className={`badge ${done ? 'badge-success' : started ? 'badge-warning' : 'badge-neutral'}`}>
+                        {done ? 'أكمل' : started ? 'قيد الإجابة' : 'لم يبدأ'}
+                        <span className="mono">{answered}/{totalQuestions}</span>
+                      </span>
                     </li>
                   );
                 })
@@ -692,27 +388,32 @@ export default function ControlPage() {
             </ul>
           </div>
 
-          {/* Answers Card */}
+          {/* Answers for the current team */}
           <div className="card">
             <div className="card-header">
               <div className="card-title">
                 <div className="card-icon"><FileText /></div>
-                <span>الإجابات</span>
+                <span>إجابات الفريق الحالي ({teamAnswers.length})</span>
               </div>
             </div>
             <div className="answers-container">
-              {Object.keys(answers).length === 0 ? (
+              {teamAnswers.length === 0 ? (
                 <div className="empty-state">
                   <FileText />
-                  لم يتم استلام إجابات بعد
+                  لم يتم استلام إجابات لهذا الفريق بعد
                 </div>
               ) : (
-                Object.entries(answers).map(([team, teamAnswers]) => (
-                  <div key={team} className="answer-item">
-                    <strong>{team}</strong>
+                Object.entries(
+                  teamAnswers.reduce<Record<string, TeamAnswerRow[]>>((acc, r) => {
+                    (acc[r.judgeName] ||= []).push(r);
+                    return acc;
+                  }, {})
+                ).map(([judgeName, rows]) => (
+                  <div key={judgeName} className="answer-item">
+                    <strong>{judgeName}</strong>
                     <ul>
-                      {teamAnswers.map((answer, idx) => (
-                        <li key={idx}>{answer.player}: {answer.answer}</li>
+                      {rows.map((r) => (
+                        <li key={r.id}>{r.questionText}: <span className="fw-600">{r.answer}</span> ({r.points.toFixed(2)})</li>
                       ))}
                     </ul>
                   </div>
@@ -721,42 +422,46 @@ export default function ControlPage() {
             </div>
           </div>
 
-          {/* Leaderboard Card */}
+          {/* Leaderboard */}
           <div className="card span-2">
             <div className="card-header">
               <div className="card-title">
                 <div className="card-icon"><Trophy /></div>
                 <span>لوحة المتصدرين</span>
               </div>
+              <span className="text-xs text-secondary">محسوبة على الخادم من جميع الإجابات</span>
             </div>
-            <table className="leaderboard-table">
-              <thead>
-                <tr>
-                  <th style={{ width: '56px' }}>#</th>
-                  <th>الفريق</th>
-                  <th className="num">إجمالي النقاط</th>
-                </tr>
-              </thead>
-              <tbody>
-                {leaderboard.length === 0 ? (
+            <div className="table-wrap" style={{ maxHeight: '480px', overflowY: 'auto' }}>
+              <table className="leaderboard-table">
+                <thead>
                   <tr>
-                    <td colSpan={3} className="empty-state">لا توجد نتائج بعد</td>
+                    <th style={{ width: '56px' }}>#</th>
+                    <th>الفريق</th>
+                    <th className="num">الإجابات</th>
+                    <th className="num">المحكمون</th>
+                    <th className="num">إجمالي النقاط</th>
                   </tr>
-                ) : (
-                  leaderboard.map((entry, idx) => (
-                    <tr key={idx}>
-                      <td><span className={`rank-badge rank-badge--${idx + 1}`}>{idx + 1}</span></td>
-                      <td className="fw-600">{entry.teamName}</td>
-                      <td className="num fw-700 text-primary">{entry.totalPoints.toFixed(2)}</td>
-                    </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {leaderboard.length === 0 ? (
+                    <tr><td colSpan={5} className="empty-state">لا توجد نتائج بعد</td></tr>
+                  ) : (
+                    leaderboard.map((entry, idx) => (
+                      <tr key={entry.teamName} style={entry.teamName === currentTeam ? { background: 'var(--primary-tint)' } : undefined}>
+                        <td><span className={`rank-badge rank-badge--${idx + 1}`}>{idx + 1}</span></td>
+                        <td className="fw-600">{entry.teamName}</td>
+                        <td className="num text-secondary">{entry.answerCount}</td>
+                        <td className="num text-secondary">{entry.judgeCount}</td>
+                        <td className="num fw-700 text-primary">{entry.totalPoints.toFixed(2)}</td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
           </div>
         </div>
 
-        {/* Quick Actions */}
         <div className="quick-actions">
           <h3>الإجراءات السريعة</h3>
           <div className="action-links">

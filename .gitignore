@@ -47,3 +47,8 @@ drop-judge-name-constraint.sql
 .env.localold
 src/types/database.types.ts
 /visual_identity
+
+# Load-test output and DB backups (contain production data)
+stress/results/
+stress/backups/
+stress/*.log

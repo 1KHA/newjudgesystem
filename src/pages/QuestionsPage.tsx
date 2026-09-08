@@ -30,14 +30,14 @@ export default function QuestionsPage() {
   const [existingQuestions, setExistingQuestions] = useState<Question[]>([]);
   const [bankName, setBankName] = useState('');
   const [totalPoints, setTotalPoints] = useState(100);
-  const [sections, setSections] = useState<Section[]>([]);
+  const [sections, setSections] = useState<Section[]>(() => [
+    { id: Date.now(), name: 'القسم 1', weight: 1, questions: [] }
+  ]);
   const [loading, setLoading] = useState(true);
   const [showExisting, setShowExisting] = useState(true);
 
   useEffect(() => {
     loadData();
-    // Initialize with one section
-    addSection();
   }, []);
 
   const loadData = async () => {

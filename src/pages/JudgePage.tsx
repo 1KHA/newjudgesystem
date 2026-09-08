@@ -1,522 +1,317 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { useParams } from 'react-router-dom';
+import {
+  AlertCircle, LogIn, UserRound, CheckCircle2, Clock, Check, ListChecks, Send,
+  Wifi, WifiOff, RefreshCw, CloudUpload, Link2Off
+} from 'lucide-react';
 import { supabase } from '../lib/supabase';
-import { getOrCreateJudge, getJudge, submitAnswer, getLatestSession, getSession } from '../lib/supabaseService';
+import {
+  getSessionDetail, getSession, getOrCreateJudge, getJudge, upsertAnswer,
+  getJudgeAnswersForTeam, touchJudge
+} from '../lib/supabaseService';
 import { normalizeSessionParam } from '../lib/sessionRouting';
-import type { Question } from '../types';
-import { AlertCircle, LogIn, UserRound, CheckCircle2, Clock, Check, ListChecks, Send } from 'lucide-react';
+import { OfflineAnswerQueue, browserStorage } from '../lib/offlineQueue';
+import { RealtimeManager } from '../lib/realtimeManager';
+import { healthStore } from '../lib/connectionHealth';
+import { useConnectionHealth } from '../hooks/useConnectionHealth';
+import type { Question, SessionDetail, Session, PendingAnswer } from '../types';
 
+/** Poll interval for team/status changes; the safety net behind the two realtime paths. */
+const POLL_MS = 4_000;
+/** How often queued answers are retried while any are pending. */
+const QUEUE_RETRY_MS = 8_000;
+/** Presence ping so the host sees "last seen". */
+const PRESENCE_MS = 60_000;
+
+interface StoredJudge { name: string; token: string; id: string }
+
+const judgeStorageKey = (sessionId: string) => `judge_${sessionId}`;
+
+function readStoredJudge(sessionId: string): StoredJudge | null {
+  try {
+    const raw = localStorage.getItem(judgeStorageKey(sessionId));
+    return raw ? (JSON.parse(raw) as StoredJudge) : null;
+  } catch { return null; }
+}
+
+function calculatePoints(question: Question, selectedAnswer: string): number {
+  const choices = question.choices;
+  let selectedWeight = 1;
+  let maxWeight = 1;
+  if (choices.length > 0 && typeof choices[0] === 'object') {
+    const objs = choices as { text: string; weight: number }[];
+    selectedWeight = objs.find((c) => c.text === selectedAnswer)?.weight ?? 0;
+    maxWeight = Math.max(...objs.map((c) => c.weight));
+  }
+  return Number(((selectedWeight / maxWeight) * (question.weight || 1)).toFixed(2));
+}
+
+const sendPending = async (p: PendingAnswer) => {
+  await upsertAnswer({
+    answer: p.answer, points: p.points, question_id: p.question_id,
+    team_id: p.team_id, judge_id: p.judge_id, session_id: p.session_id
+  });
+};
+
+type Phase = 'loading' | 'invalid' | 'ended' | 'join' | 'judging';
 
 export default function JudgePage() {
-  // Unique session link support: /judge/:sessionId locks this device to that session
   const { sessionId: sessionParam } = useParams();
-  const urlSessionId = normalizeSessionParam(sessionParam);
-  const invalidLink = Boolean(sessionParam) && !urlSessionId;
+  const sessionId = normalizeSessionParam(sessionParam);
 
-  const [sessionId, setSessionId] = useState<string>('لم تبدأ');
-  const [judgeName, setJudgeName] = useState<string>('');
-  const [judgeId, setJudgeId] = useState<string>('');
-  const [isLoggedIn, setIsLoggedIn] = useState<boolean>(false);
-  
-  const [currentTeam, setCurrentTeam] = useState<string>('لم يتم اختيار فريق');
+  const [phase, setPhase] = useState<Phase>('loading');
+  const [session, setSession] = useState<SessionDetail | null>(null);
+  const [judgeName, setJudgeName] = useState('');
+  const [judge, setJudge] = useState<StoredJudge | null>(null);
+  const [joinError, setJoinError] = useState('');
+  const [joining, setJoining] = useState(false);
+
+  const [currentTeam, setCurrentTeam] = useState<string | null>(null);
   const [questions, setQuestions] = useState<Question[]>([]);
-  const [selectedAnswers, setSelectedAnswers] = useState<{ [key: string]: string }>({});
-  const [judgeState, setJudgeState] = useState<'judging' | 'waiting'>('judging');
+  const [selectedAnswers, setSelectedAnswers] = useState<Record<string, string>>({});
+  const [submitted, setSubmitted] = useState(false);
+  const [pendingCount, setPendingCount] = useState(0);
+
+  const health = useConnectionHealth();
+  const queueRef = useRef<OfflineAnswerQueue | null>(null);
+  const managerRef = useRef<RealtimeManager | null>(null);
+  const currentTeamRef = useRef<string | null>(null);
+  const judgeRef = useRef<StoredJudge | null>(null);
+  judgeRef.current = judge;
+
+  // ---------------------------------------------------------- load session --
 
   useEffect(() => {
-    checkExistingSession();
-    fetchTargetSessionId();
-    subscribeToSessionChanges();
-  }, []);
+    if (!sessionId) { setPhase('invalid'); return; }
+    let cancelled = false;
+    (async () => {
+      try {
+        const detail = await getSessionDetail(sessionId);
+        if (cancelled) return;
+        if (!detail) { setPhase('invalid'); return; }
+        if (detail.status === 'completed') { setPhase('ended'); return; }
+        setSession(detail);
+        setQuestions(detail.questions);
+        setCurrentTeam(detail.current_team_id ?? null);
+        currentTeamRef.current = detail.current_team_id ?? null;
 
-  // When opened via /judge/:sessionId, join THAT session (multi-session isolation).
-  // Otherwise keep the old behavior: the most recently created session.
-  const fetchTargetSessionId = async () => {
-    try {
-      if (urlSessionId) {
-        const session = await getSession(urlSessionId);
-        if (session && session.current_team_id !== 'completed') {
-          setSessionId(session.session_id);
-        } else {
-          setSessionId('رابط غير صالح');
-        }
-        return;
-      }
-      const latestSession = await getLatestSession();
-      if (latestSession) {
-        setSessionId(latestSession.session_id);
-      }
-    } catch (error) {
-      console.error('Error fetching session:', error);
-    }
-  };
-
-  const subscribeToSessionChanges = () => {
-    // A unique-link judge is locked to its session — skip latest-session discovery entirely
-    if (urlSessionId) {
-      return () => {};
-    }
-
-    console.log('Subscribing to session changes...');
-    
-    // Polling fallback - check for new sessions every 5 seconds
-    const pollingInterval = setInterval(async () => {
-      if (!isLoggedIn) {
-        try {
-          const latestSession = await getLatestSession();
-          if (latestSession && latestSession.session_id !== sessionId) {
-            setSessionId(latestSession.session_id);
-            console.log('Polling: Updated to new session:', latestSession.session_id);
+        // Automatic rejoin for a judge who already joined on this device
+        const stored = readStoredJudge(sessionId);
+        if (stored) {
+          const row = await getJudge(stored.name, stored.token).catch(() => null);
+          if (!cancelled && row && row.session_id === sessionId) {
+            setJudge({ ...stored, id: row.id });
+            setJudgeName(stored.name);
+            setPhase('judging');
+            return;
           }
-        } catch (error) {
-          console.error('Polling error:', error);
+          localStorage.removeItem(judgeStorageKey(sessionId));
         }
+        setPhase('join');
+      } catch (e) {
+        console.error('Error loading session:', e);
+        if (!cancelled) setPhase('invalid');
       }
-    }, 5000);
+    })();
+    return () => { cancelled = true; };
+  }, [sessionId]);
 
-    // Try real-time subscription as well
-    const sessionChannel = supabase
-      .channel('sessions-monitor', {
-        config: {
-          broadcast: { self: false },
-          presence: { key: '' }
-        }
-      })
-      .on('postgres_changes',
-        { event: 'INSERT', schema: 'public', table: 'sessions' },
-        async (payload) => {
-          console.log('Real-time: New session detected:', payload);
-          
-          if (!isLoggedIn) {
-            const latestSession = await getLatestSession();
-            if (latestSession) {
-              setSessionId(latestSession.session_id);
-              console.log('Real-time: Updated to new session:', latestSession.session_id);
-            }
-          }
-        }
-      )
-      .subscribe((status) => {
-        console.log('Session monitor status:', status);
-        if (status === 'CHANNEL_ERROR') {
-          console.warn('Real-time subscription failed, using polling fallback');
-        }
-      });
+  // ----------------------------------------------------------------- join --
 
-    return () => {
-      clearInterval(pollingInterval);
-      sessionChannel.unsubscribe();
-    };
-  };
-
-  useEffect(() => {
-    if (isLoggedIn && sessionId !== 'لم تبدأ') {
-      const cleanup = subscribeToQuestions();
-      const validationInterval = startSessionValidation();
-      
-      return () => {
-        cleanup?.();
-        clearInterval(validationInterval);
-      };
-    }
-  }, [isLoggedIn, sessionId]);
-
-  // Auto-save team name whenever it changes
-  useEffect(() => {
-    if (currentTeam !== 'لم يتم اختيار فريق' && sessionId !== 'لم تبدأ' && isLoggedIn) {
-      localStorage.setItem('currentTeam', currentTeam);
-      localStorage.setItem(`currentTeam_${sessionId}`, currentTeam);
-      console.log('Auto-saved team name:', currentTeam);
-    }
-  }, [currentTeam, sessionId, isLoggedIn]);
-
-  const startSessionValidation = () => {
-    // Poll every 2 seconds to check if session still exists
-    const interval = setInterval(async () => {
-      if (isLoggedIn && sessionId !== 'لم تبدأ') {
-        try {
-          const { data, error } = await supabase
-            .from('sessions')
-            .select('session_id, current_team_id')
-            .eq('session_id', sessionId)
-            .single();
-          
-          // Check if session was deleted or marked as completed
-          if (error || !data || data.current_team_id === 'completed') {
-            console.log('Session ended or completed, logging out...');
-            handleSessionEnd();
-          }
-        } catch (error) {
-          console.error('Session validation error:', error);
-          // If there's an error fetching the session, it likely doesn't exist
-          handleSessionEnd();
-        }
-      }
-    }, 2000);
-    
-    return interval;
-  };
-
-  const checkExistingSession = () => {
-    const savedSessionId = localStorage.getItem('judgeSessionId');
-    const savedJudgeName = localStorage.getItem('judgeName');
-    const savedJudgeToken = localStorage.getItem('judgeToken');
-
-    if (savedSessionId && savedJudgeName && savedJudgeToken) {
-      attemptRejoin(savedSessionId, savedJudgeName, savedJudgeToken);
-    }
-  };
-
-  const loadPreviousAnswers = async (judgeId: string, sessionId: string, currentTeamId: string) => {
-    try {
-      const { data: answers, error } = await supabase
-        .from('answers')
-        .select('question_id, answer')
-        .eq('judge_id', judgeId)
-        .eq('session_id', sessionId)
-        .eq('team_id', currentTeamId);
-      
-      if (error) throw error;
-      
-      if (answers && answers.length > 0) {
-        const answersMap: { [key: string]: string } = {};
-        answers.forEach(a => {
-          answersMap[a.question_id] = a.answer;
-        });
-        setSelectedAnswers(answersMap);
-        console.log('Loaded previous answers:', answers.length);
-      }
-    } catch (error) {
-      console.error('Error loading previous answers:', error);
-    }
-  };
-
-  const loadCurrentQuestions = async (sessionId: string, judgeIdParam?: string) => {
-    try {
-      const { data: session, error } = await supabase
-        .from('sessions')
-        .select('current_questions, current_team_id')
-        .eq('session_id', sessionId)
-        .single();
-      
-      if (error) throw error;
-      
-      if (session) {
-        // ALWAYS set team name first, regardless of questions
-        const teamName = session.current_team_id || 'لم يتم اختيار فريق';
-        if (teamName !== 'لم يتم اختيار فريق') {
-          setCurrentTeam(teamName);
-          // Save to both general and session-specific localStorage
-          localStorage.setItem('currentTeam', teamName);
-          localStorage.setItem(`currentTeam_${sessionId}`, teamName);
-          console.log('Team name set and saved:', teamName);
-        }
-        
-        // Then handle questions if they exist
-        if (session.current_questions && session.current_questions.length > 0) {
-          setQuestions(session.current_questions);
-          console.log('Loaded current questions on rejoin:', session.current_questions.length);
-          
-          // Load previous answers for this team
-          // Use parameter if provided, otherwise fall back to state
-          const effectiveJudgeId = judgeIdParam || judgeId;
-          if (effectiveJudgeId && teamName !== 'لم يتم اختيار فريق') {
-            await loadPreviousAnswers(effectiveJudgeId, sessionId, teamName);
-          }
-        } else {
-          console.log('ℹ No current questions in session yet');
-        }
-      }
-    } catch (error) {
-      console.error('Error loading current questions:', error);
-    }
-  };
-
-  const attemptRejoin = async (sessionId: string, name: string, token: string) => {
-    try {
-      const judge = await getJudge(name, token);
-      
-      if (judge && judge.session_id === sessionId) {
-        setSessionId(sessionId);
-        setJudgeName(name);
-        setJudgeId(judge.id);
-        setIsLoggedIn(true);
-        
-        // Load current questions from session if available
-        // Pass judge.id directly to avoid race condition with state update
-        await loadCurrentQuestions(sessionId, judge.id);
-      } else {
-        // Clear invalid session
-        localStorage.removeItem('judgeSessionId');
-        localStorage.removeItem('judgeName');
-        localStorage.removeItem('judgeToken');
-      }
-    } catch (error) {
-      console.error('Error rejoining:', error);
-      localStorage.removeItem('judgeSessionId');
-      localStorage.removeItem('judgeName');
-      localStorage.removeItem('judgeToken');
-    }
-  };
-
-  const subscribeToQuestions = () => {
-    const channel = supabase
-      .channel(`session-${sessionId}`)
-      .on('broadcast', { event: 'new-questions' }, (payload: any) => {
-        console.log('Received questions:', payload);
-        setQuestions(payload.payload.questions || []);
-        
-        // Only update team if payload has a valid team name
-        const newTeam = payload.payload.currentTeam;
-        if (newTeam && newTeam !== 'لم يتم اختيار فريق') {
-          setCurrentTeam(newTeam);
-          localStorage.setItem('currentTeam', newTeam);
-          localStorage.setItem(`currentTeam_${sessionId}`, newTeam);
-          console.log('Team updated from broadcast:', newTeam);
-        } else {
-          // Keep existing team - restore from localStorage if needed
-          const savedTeam = localStorage.getItem(`currentTeam_${sessionId}`);
-          if (savedTeam && savedTeam !== 'لم يتم اختيار فريق') {
-            console.log('Broadcast had no team, restoring from localStorage:', savedTeam);
-            setCurrentTeam(savedTeam);
-          }
-        }
-        
-        setSelectedAnswers({});
-        // Reset to judging state when new questions arrive
-        setJudgeState('judging');
-      })
-      .subscribe();
-
-    // Subscribe to session end
-    const sessionChannel = supabase
-      .channel(`session-end-${sessionId}`)
-      .on('postgres_changes',
-        { event: 'DELETE', schema: 'public', table: 'sessions', filter: `session_id=eq.${sessionId}` },
-        () => {
-          handleSessionEnd();
-        }
-      )
-      .subscribe();
-
-    return () => {
-      channel.unsubscribe();
-      sessionChannel.unsubscribe();
-    };
-  };
-
-  const handleSessionEnd = () => {
-    // Clean up session-specific data
-    if (sessionId !== 'لم تبدأ') {
-      localStorage.removeItem(`currentTeam_${sessionId}`);
-    }
-    
-    localStorage.removeItem('judgeSessionId');
-    localStorage.removeItem('judgeName');
-    localStorage.removeItem('judgeToken');
-    localStorage.removeItem('currentTeam');
-    
-    setSessionId('لم تبدأ');
-    setIsLoggedIn(false);
-    setQuestions([]);
-    setCurrentTeam('لم يتم اختيار فريق');
-    setSelectedAnswers({});
-    
-    alert('انتهت جلسة التحكيم. يرجى الانضمام لجلسة جديدة.');
-  };
-
-  const handleJoinGame = async () => {
+  const handleJoin = async () => {
+    if (!sessionId || !session) return;
     const name = judgeName.trim();
-    if (!name) {
-      alert('يرجى إدخال اسمك');
-      return;
-    }
-
+    if (!name) { setJoinError('يرجى إدخال اسمك'); return; }
+    setJoining(true);
+    setJoinError('');
     try {
-      console.log('Attempting to join game...');
-      
-      // Join the session from the unique link, or fall back to the latest session
-      const latestSession = urlSessionId
-        ? await getSession(urlSessionId)
-        : await getLatestSession();
-      console.log('Target session:', latestSession);
-      
-      if (!latestSession || latestSession.current_team_id === 'completed') {
-        alert(urlSessionId
-          ? 'رابط الجلسة غير صالح أو الجلسة منتهية. تحقق من الرابط مع المضيف.'
-          : 'لا توجد جلسة نشطة حالياً. يرجى الانتظار حتى يبدأ المضيف جلسة جديدة.');
-        return;
-      }
-
-      const newJudgeToken = crypto.randomUUID();
-      
-      console.log('Creating judge with:', {
-        name,
-        session_id: latestSession.session_id
-      });
-      
-      const judge = await getOrCreateJudge({
-        name,
-        judge_token: newJudgeToken,
-        session_id: latestSession.session_id
-      });
-
-      console.log('Judge joined successfully:', judge);
-
-      setJudgeId(judge.id);
-      setJudgeName(name);
-      setSessionId(latestSession.session_id);
-      setIsLoggedIn(true);
-
-      localStorage.setItem('judgeSessionId', latestSession.session_id);
-      localStorage.setItem('judgeName', name);
-      localStorage.setItem('judgeToken', newJudgeToken);
-
-      // Show success message
-      setTimeout(() => {
-        alert(`مرحباً ${name}! تم الانضمام بنجاح للجلسة: ${latestSession.session_id}`);
-      }, 100);
-    } catch (error) {
-      console.error('Error joining game:', error);
-      alert('خطأ في الانضمام للجلسة');
+      const fresh = await getSession(sessionId);
+      if (!fresh || fresh.status === 'completed') { setPhase('ended'); return; }
+      const token = crypto.randomUUID();
+      const row = await getOrCreateJudge({ name, judge_token: token, session_id: sessionId });
+      const stored: StoredJudge = { name, token, id: row.id };
+      localStorage.setItem(judgeStorageKey(sessionId), JSON.stringify(stored));
+      setJudge(stored);
+      setPhase('judging');
+    } catch (e) {
+      console.error('Error joining session:', e);
+      setJoinError('تعذر الانضمام، تحقق من الاتصال وحاول مرة أخرى');
+    } finally {
+      setJoining(false);
     }
   };
 
-  const calculatePoints = (question: Question, selectedAnswer: string): number => {
-    // Find the question
-    const choices = question.choices;
-    
-    // Handle both string[] and QuestionChoice[] formats
-    let selectedWeight = 1;
-    let maxWeight = 1;
-    
-    if (choices.length > 0 && typeof choices[0] === 'object') {
-      // New format with weights
-      const choiceObjects = choices as Array<{text: string; weight: number}>;
-      const selectedChoice = choiceObjects.find(c => c.text === selectedAnswer);
-      selectedWeight = selectedChoice?.weight || 0;
-      maxWeight = Math.max(...choiceObjects.map(c => c.weight));
-    } else {
-      // Old format - all choices have equal weight
-      selectedWeight = 1;
-      maxWeight = 1;
-    }
-    
-    // Apply the formula: points = (selectedOptionWeight / maxOptionWeight) * questionWeight
-    const questionWeight = question.weight || 1;
-    const points = (selectedWeight / maxWeight) * questionWeight;
-    
-    return Number(points.toFixed(2));
-  };
+  // ------------------------------------------------- answers for a team --
 
-  const handleAnswerSelect = async (questionId: string, answer: string) => {
-    const previousAnswer = selectedAnswers[questionId];
-    
-    // If clicking the same answer, do nothing
-    if (previousAnswer === answer) {
-      console.log('ℹ Same answer selected, no change needed');
-      return;
-    }
-
-    // Update local state first
-    setSelectedAnswers(prev => ({
-      ...prev,
-      [questionId]: answer
-    }));
-
-    // Find the question to calculate points
-    const question = questions.find(q => q.id === questionId);
-    if (!question) {
-      console.error('Question not found:', questionId);
-      return;
-    }
-
-    // Calculate points using the formula
-    const points = calculatePoints(question, answer);
-    
+  const loadMyAnswers = useCallback(async (team: string) => {
+    const j = judgeRef.current;
+    if (!sessionId || !j) return;
     try {
-      // If there was a previous answer, delete it first
-      if (previousAnswer) {
-        console.log(`Changing answer from "${previousAnswer}"to "${answer}"`);
-        
-        const { error: deleteError } = await supabase
-          .from('answers')
-          .delete()
-          .eq('judge_id', judgeId)
-          .eq('question_id', questionId)
-          .eq('team_id', currentTeam)
-          .eq('session_id', sessionId);
-        
-        if (deleteError) {
-          console.error('Error deleting old answer:', deleteError);
-          throw deleteError;
-        }
-        
-        console.log('Old answer deleted');
+      const rows = await getJudgeAnswersForTeam(sessionId, j.id, team);
+      const map: Record<string, string> = {};
+      rows.forEach((r) => { map[r.question_id] = r.answer; });
+      // Anything still queued locally wins over the server copy
+      queueRef.current?.peek().forEach((p) => { if (p.team_id === team) map[p.question_id] = p.answer; });
+      setSelectedAnswers(map);
+    } catch (e) {
+      console.error('Error loading previous answers:', e);
+    }
+  }, [sessionId]);
+
+  /** Single entry point for every team/status signal (broadcast, db event, poll). */
+  const applySessionState = useCallback((s: Pick<Session, 'current_team_id' | 'status'>) => {
+    if (s.status === 'completed') {
+      setPhase('ended');
+      return;
+    }
+    const team = s.current_team_id ?? null;
+    if (team && team !== currentTeamRef.current) {
+      currentTeamRef.current = team;
+      setCurrentTeam(team);
+      setSubmitted(false);
+      setSelectedAnswers({});
+      void loadMyAnswers(team);
+    }
+  }, [loadMyAnswers]);
+
+  // ------------------------------------------ realtime + queue lifecycle --
+
+  useEffect(() => {
+    if (phase !== 'judging' || !sessionId || !judge) return;
+
+    const queue = new OfflineAnswerQueue(`answerQueue_${sessionId}_${judge.id}`, browserStorage());
+    queueRef.current = queue;
+    setPendingCount(queue.size);
+    const unsubQueue = queue.subscribe(() => setPendingCount(queue.size));
+    const flush = () => queue.flush(sendPending).catch(() => undefined);
+
+    // Poll fallback doubles as the connectivity ping
+    const poll = async () => {
+      const s = await getSession(sessionId);
+      if (!s) throw new Error('session missing');
+      applySessionState(s);
+    };
+
+    healthStore.startSession(sessionId);
+    const manager = new RealtimeManager({
+      client: supabase,
+      ping: poll,
+      onResync: () => { void poll(); void flush(); }
+    });
+    managerRef.current = manager;
+    manager.start([
+      {
+        name: `session-${sessionId}`,
+        configure: (ch) => ch.on('broadcast', { event: 'team-change' }, (msg) => {
+          healthStore.noteChannelEvent(`session-${sessionId}`);
+          const p = (msg as { payload?: { currentTeam?: string; status?: string } }).payload || {};
+          applySessionState({ current_team_id: p.currentTeam ?? null, status: (p.status as Session['status']) || 'active' });
+        })
+      },
+      {
+        name: `session-row-${sessionId}`,
+        configure: (ch) => ch.on('postgres_changes',
+          { event: 'UPDATE', schema: 'public', table: 'sessions', filter: `session_id=eq.${sessionId}` },
+          (payload) => {
+            healthStore.noteChannelEvent(`session-row-${sessionId}`);
+            applySessionState(payload.new as Session);
+          })
       }
+    ]);
 
-      // Submit new answer with calculated points
-      await submitAnswer({
-        answer,
-        points,
-        question_id: questionId,
-        team_id: currentTeam,
-        judge_id: judgeId,
-        session_id: sessionId
-      });
-      
-      console.log(`New answer submitted with points: ${points}`);
-    } catch (error) {
-      console.error('Error updating answer:', error);
-      // Revert local state on error
-      setSelectedAnswers(prev => {
-        if (previousAnswer) {
-          // Restore previous answer
-          return { ...prev, [questionId]: previousAnswer };
-        } else {
-          // Remove the failed answer
-          const newState = { ...prev };
-          delete newState[questionId];
-          return newState;
-        }
-      });
-    }
+    if (currentTeamRef.current) void loadMyAnswers(currentTeamRef.current);
+    void flush();
+
+    const pollTimer = setInterval(() => { poll().catch(() => undefined); }, POLL_MS);
+    const queueTimer = setInterval(() => { if (queue.size > 0) void flush(); }, QUEUE_RETRY_MS);
+    const presenceTimer = setInterval(() => { touchJudge(judge.id).catch(() => undefined); }, PRESENCE_MS);
+    const onOnline = () => { void flush(); };
+    window.addEventListener('online', onOnline);
+    window.addEventListener('focus', onOnline);
+
+    return () => {
+      clearInterval(pollTimer);
+      clearInterval(queueTimer);
+      clearInterval(presenceTimer);
+      window.removeEventListener('online', onOnline);
+      window.removeEventListener('focus', onOnline);
+      unsubQueue();
+      manager.stop();
+      managerRef.current = null;
+      queueRef.current = null;
+      healthStore.endSession();
+    };
+  }, [phase, sessionId, judge, applySessionState, loadMyAnswers]);
+
+  const allAnswered = questions.length > 0 && questions.every((q) => selectedAnswers[q.id]);
+
+  // -------------------------------------------------------------- actions --
+
+  const handleAnswerSelect = (question: Question, answer: string) => {
+    const team = currentTeamRef.current;
+    if (!team || !judge || !sessionId) return;
+    if (selectedAnswers[question.id] === answer) return;
+    setSelectedAnswers((prev) => ({ ...prev, [question.id]: answer }));
+    setSubmitted(false);
+    queueRef.current?.enqueue({
+      session_id: sessionId, team_id: team, judge_id: judge.id,
+      question_id: question.id, answer, points: calculatePoints(question, answer)
+    });
+    void queueRef.current?.flush(sendPending).catch(() => undefined);
   };
 
-  const handleSubmitFinal = async () => {
-    const totalQuestions = questions.length;
-    const answeredQuestions = Object.keys(selectedAnswers).length;
-    
-    // Check if no questions answered
-    if (answeredQuestions === 0) {
-      alert('يرجى الإجابة على جميع الأسئلة');
+  const handleSubmitFinal = () => {
+    if (!allAnswered) {
+      const missing = questions.length - Object.keys(selectedAnswers).length;
+      alert(`يرجى الإجابة على جميع الأسئلة، متبقي ${missing} سؤال`);
       return;
     }
-    
-    // Check if all questions are answered
-    if (answeredQuestions < totalQuestions) {
-      const unansweredCount = totalQuestions - answeredQuestions;
-      alert(`يرجى الإجابة على جميع الأسئلة\nتم الإجابة على ${answeredQuestions} من ${totalQuestions}\nمتبقي ${unansweredCount} سؤال`);
-      return;
-    }
-
-    // All answers are already submitted individually
-    // Transition to waiting state
-    setJudgeState('waiting');
-    
-    console.log(`Submitted ${answeredQuestions} answers (all questions), now waiting for next team`);
+    setSubmitted(true);
   };
 
-  const answeredCount = Object.keys(selectedAnswers).length;
-  const allAnswered = questions.length > 0 && answeredCount === questions.length;
+  const handleRefresh = () => { void managerRef.current?.reconnectAll('manual refresh'); };
 
-  if (!isLoggedIn) {
+  // ---------------------------------------------------------------- views --
+
+  if (phase === 'loading') {
+    return (
+      <div className="auth-page">
+        <div className="auth-card text-center">
+          <img src="/brand/logo.png" alt="مياهثون" className="auth-card__logo" />
+          <div className="spinner" style={{ margin: '12px auto' }} />
+          <p className="text-secondary">جاري تحميل الجلسة...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (phase === 'invalid' || phase === 'ended') {
+    const ended = phase === 'ended';
+    return (
+      <div className="auth-page">
+        <div className="auth-card text-center">
+          <img src="/brand/logo.png" alt="مياهثون" className="auth-card__logo" />
+          <div className="empty-state">
+            {ended ? <CheckCircle2 /> : <Link2Off />}
+            <h3>{ended ? 'انتهت جلسة التحكيم' : 'رابط الجلسة غير صالح'}</h3>
+            <p>
+              {ended
+                ? 'شكراً لمشاركتك. تم حفظ جميع إجاباتك.'
+                : 'الانضمام للتحكيم يتم فقط عبر الرابط الخاص الذي يرسله المضيف لكل جلسة.'}
+            </p>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (phase === 'join') {
     return (
       <div className="auth-page">
         <div className="auth-card">
           <img src="/brand/logo.png" alt="مياهثون" className="auth-card__logo" />
           <h1 className="auth-card__title">الانضمام للتحكيم</h1>
-          <p className="auth-card__subtitle">أدخل اسمك للانضمام إلى جلسة التحكيم</p>
+          <p className="auth-card__subtitle">{session?.name || 'جلسة تحكيم'}</p>
 
           <div className="text-center mb-5">
             <span className="session-badge">
@@ -525,10 +320,10 @@ export default function JudgePage() {
             </span>
           </div>
 
-          {(invalidLink || sessionId === 'رابط غير صالح') && (
+          {joinError && (
             <div className="alert alert-danger" role="alert">
               <AlertCircle />
-              <span>رابط الجلسة غير صالح أو الجلسة منتهية. تحقق من الرابط مع المضيف.</span>
+              <span>{joinError}</span>
             </div>
           )}
 
@@ -539,7 +334,7 @@ export default function JudgePage() {
               type="text"
               value={judgeName}
               onChange={(e) => setJudgeName(e.target.value)}
-              onKeyDown={(e) => e.key === 'Enter' && handleJoinGame()}
+              onKeyDown={(e) => e.key === 'Enter' && handleJoin()}
               placeholder="أدخل اسمك"
               autoComplete="name"
               maxLength={60}
@@ -547,92 +342,113 @@ export default function JudgePage() {
             />
           </div>
 
-          <button className="btn btn-primary btn-lg btn-block" onClick={handleJoinGame}>
-            <LogIn />
-            انضمام للجلسة
+          <button className="btn btn-primary btn-lg btn-block" onClick={handleJoin} disabled={joining}>
+            {joining ? <RefreshCw className="spin" /> : <LogIn />}
+            {joining ? 'جاري الانضمام...' : 'انضمام للجلسة'}
           </button>
         </div>
       </div>
     );
   }
 
+  // ---- judging ----
+  const answeredCount = questions.filter((q) => selectedAnswers[q.id]).length;
+  const online = health.status === 'connected';
+  const waitingForTeam = !currentTeam;
+
   return (
     <div className="judge-page">
       <div className="judge-page__inner">
         <div className="judge-page__topbar">
           <img src="/brand/logo2.png" alt="مياهثون" />
-          <span className="judge-page__judge">
-            <UserRound />
-            {judgeName}
-          </span>
+          <div className="flex items-center gap-2">
+            {pendingCount > 0 && (
+              <span className="judge-page__judge" title="إجابات بانتظار الإرسال">
+                <CloudUpload />
+                {pendingCount}
+              </span>
+            )}
+            <button
+              className={`conn-chip ${online ? 'conn-chip--connected' : health.status === 'reconnecting' ? 'conn-chip--reconnecting' : 'conn-chip--disconnected'}`}
+              onClick={handleRefresh}
+              title="إعادة الاتصال"
+              style={{ cursor: 'pointer', background: 'rgba(255,255,255,0.14)', color: '#fff', borderColor: 'rgba(255,255,255,0.25)' }}
+            >
+              {online ? <Wifi /> : health.status === 'reconnecting' ? <RefreshCw className="spin" /> : <WifiOff />}
+              {online ? 'متصل' : health.status === 'reconnecting' ? 'إعادة الاتصال' : 'غير متصل'}
+            </button>
+            <span className="judge-page__judge">
+              <UserRound />
+              {judge?.name}
+            </span>
+          </div>
         </div>
 
         <div className="judge-card">
           <div className="judge-team-banner">
             <h2>يتم تحكيم</h2>
-            <div className="team-name">{currentTeam}</div>
+            <div className="team-name">{currentTeam ?? 'بانتظار المضيف'}</div>
           </div>
 
-          <div id="questions-container">
-            {judgeState === 'waiting' ? (
-              // Waiting Screen
-              <div className="judge-waiting">
-                <div className="judge-waiting__done">
-                  <CheckCircle2 />
-                  <h2>تم إرسال إجاباتك بنجاح</h2>
-                  <p>شكراً لك على مشاركتك في التحكيم</p>
-                </div>
+          {!online && (
+            <div className="alert alert-warning">
+              <WifiOff />
+              <span>
+                لا يوجد اتصال حالياً. يمكنك متابعة الإجابة، وسيتم إرسال إجاباتك تلقائياً عند عودة الاتصال
+                {pendingCount > 0 ? ` (${pendingCount} بانتظار الإرسال)` : ''}.
+              </span>
+            </div>
+          )}
 
-                <div className="judge-waiting__next">
-                  <div className="spinner spinner--lg" style={{ margin: '0 auto' }} />
-                  <h3>في انتظار الفريق التالي...</h3>
-                  <p>سيتم عرض الأسئلة الجديدة تلقائياً عندما يرسلها المضيف</p>
-                </div>
+          {submitted ? (
+            <div className="judge-waiting">
+              <div className="judge-waiting__done">
+                <CheckCircle2 />
+                <h2>{pendingCount > 0 ? 'جاري إرسال إجاباتك...' : 'تم إرسال إجاباتك بنجاح'}</h2>
+                <p>{pendingCount > 0 ? `${pendingCount} إجابة بانتظار الاتصال` : 'شكراً لك على مشاركتك في التحكيم'}</p>
               </div>
-            ) : questions.length === 0 ? (
-              <div className="empty-state">
-                <Clock />
-                <h3>في انتظار الأسئلة...</h3>
-                <p>ستظهر الأسئلة هنا فور إرسالها من المضيف</p>
+              <div className="judge-waiting__next">
+                <div className="spinner spinner--lg" style={{ margin: '0 auto' }} />
+                <h3>في انتظار الفريق التالي...</h3>
+                <p>سيتم عرض الفريق الجديد تلقائياً عندما ينتقل المضيف إليه</p>
               </div>
-            ) : (
-              questions.map((question, index) => (
+            </div>
+          ) : waitingForTeam || questions.length === 0 ? (
+            <div className="empty-state">
+              <Clock />
+              <h3>{waitingForTeam ? 'في انتظار بدء التحكيم...' : 'لا توجد أسئلة في هذه الجلسة'}</h3>
+              <p>سيبدأ التحكيم فور اختيار المضيف للفريق الأول</p>
+            </div>
+          ) : (
+            <>
+              {questions.map((question, index) => (
                 <div key={question.id} className="question-block">
                   <span className="question-block__num">السؤال {index + 1}</span>
                   <div className="question-block__text">{question.text}</div>
-
                   <div className="choice-grid">
                     {question.choices.map((choice, choiceIdx) => {
                       const choiceText = typeof choice === 'string' ? choice : choice.text;
                       const choiceWeight = typeof choice === 'string' ? 1 : choice.weight;
                       const isSelected = selectedAnswers[question.id] === choiceText;
-
                       return (
                         <button
                           key={choiceIdx}
                           className={`answer-btn ${isSelected ? 'selected' : ''}`}
-                          onClick={() => handleAnswerSelect(question.id, choiceText)}
+                          onClick={() => handleAnswerSelect(question, choiceText)}
                           aria-pressed={isSelected}
                         >
                           <div>{choiceText}</div>
                           {typeof choice !== 'string' && (
                             <div className="answer-btn__weight">وزن: {choiceWeight}</div>
                           )}
-                          {isSelected && (
-                            <span className="answer-btn__check"><Check /></span>
-                          )}
+                          {isSelected && <span className="answer-btn__check"><Check /></span>}
                         </button>
                       );
                     })}
                   </div>
                 </div>
-              ))
-            )}
-          </div>
+              ))}
 
-          {questions.length > 0 && judgeState === 'judging' && (
-            <>
-              {/* Progress Indicator */}
               <div className={`judge-progress ${allAnswered ? 'judge-progress--done' : ''}`}>
                 <div className="judge-progress__label">
                   {allAnswered ? <CheckCircle2 /> : <ListChecks />}

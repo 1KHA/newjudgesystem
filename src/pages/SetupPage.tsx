@@ -9,6 +9,8 @@ import {
   createSession,
   getJudgesBySession
 } from '../lib/supabaseService';
+import { RealtimeManager } from '../lib/realtimeManager';
+import { healthStore } from '../lib/connectionHealth';
 import type { Team, Question, QuestionBank, Judge } from '../types';
 import {
   ArrowRight, ArrowUp, ArrowDown, Users, HelpCircle, Scale, Check, CheckCheck, X,
@@ -64,20 +66,26 @@ export default function SetupPage() {
     loadInitialData();
   }, []);
 
-  // Live judges list once the session exists
+  // Live judges list once the session exists: realtime + 5s poll fallback
   useEffect(() => {
     if (!sessionCreated) return;
 
     loadJudges(sessionId);
-    const channel = supabase
-      .channel(`setup-judges-${sessionId}`)
-      .on('postgres_changes',
+    healthStore.startSession(sessionId);
+    const manager = new RealtimeManager({
+      client: supabase,
+      ping: () => loadJudges(sessionId),
+      onResync: () => loadJudges(sessionId)
+    });
+    manager.start([{
+      name: `judges-${sessionId}`,
+      configure: (ch) => ch.on('postgres_changes',
         { event: '*', schema: 'public', table: 'judges', filter: `session_id=eq.${sessionId}` },
-        () => loadJudges(sessionId)
-      )
-      .subscribe();
+        () => { healthStore.noteChannelEvent(`judges-${sessionId}`); loadJudges(sessionId); })
+    }]);
+    const poll = setInterval(() => loadJudges(sessionId), 5000);
 
-    return () => { channel.unsubscribe(); };
+    return () => { clearInterval(poll); manager.stop(); healthStore.endSession(); };
   }, [sessionId, sessionCreated]);
 
   const loadInitialData = async () => {
@@ -297,19 +305,18 @@ export default function SetupPage() {
     setCreating(true);
     try {
       const newSessionId = crypto.randomUUID().substring(0, 8);
+      // Keep the questions in the order they appear in the selected bank
+      const questionIds = questions.filter(q => selectedQuestions.includes(q.id)).map(q => q.id);
       const session = await createSession({
         name: `Session ${new Date().toISOString()}`,
         session_id: newSessionId,
         host_token: crypto.randomUUID(),
         host_id: user.id,
         teams: selectedTeams,
+        questionIds,
         total_points: 100
       });
       setSessionId(session.session_id);
-
-      // Hand the selected questions to the control page (same-device handoff)
-      const questionObjects = questions.filter(q => selectedQuestions.includes(q.id));
-      sessionStorage.setItem(`controlQuestions_${session.session_id}`, JSON.stringify(questionObjects));
     } catch (error) {
       console.error('Error creating session:', error);
       alert('خطأ في إنشاء الجلسة');
