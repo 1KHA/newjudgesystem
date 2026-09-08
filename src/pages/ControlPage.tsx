@@ -18,6 +18,12 @@ import {
   upsertSessionResult
 } from '../lib/supabaseService';
 import type { Question, QuestionBank, Judge, Answer, LeaderboardEntry, AnswersByTeam, Session } from '../types';
+import {
+  ArrowRight, Users, Send, Scale, FileText, Trophy, Plus, BarChart3, HeartPulse,
+  Wifi, WifiOff, RefreshCw, ChevronLeft, ChevronRight, Square, CheckCircle2, Clock, UserRound
+} from 'lucide-react';
+import BrandHeader from '../components/BrandHeader';
+import LoadingScreen from '../components/LoadingScreen';
 
 /**
  * Session control room — everything beyond the 3 setup steps lives here:
@@ -52,7 +58,7 @@ export default function ControlPage() {
   const [leaderboard, setLeaderboard] = useState<LeaderboardEntry[]>([]);
   const [judgeSubmissions, setJudgeSubmissions] = useState<{ [judgeId: string]: number }>({});
 
-  // Connection health (shared store → visible on /health page too)
+  // Connection health (shared store visible on /health page too)
   const health = useConnectionHealth();
   const subscriptionCleanupRef = useRef<(() => void) | null>(null);
   const reconnectRef = useRef<() => void>(() => {});
@@ -140,36 +146,36 @@ export default function ControlPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentTeam, totalQuestions, authorized]);
 
-  // ✅ Cleanup subscriptions when the component unmounts
+  // Cleanup subscriptions when the component unmounts
   useEffect(() => {
     return () => {
       if (subscriptionCleanupRef.current) {
-        console.log('🧹 Component unmounting, cleaning up subscriptions');
+        console.log('Component unmounting, cleaning up subscriptions');
         subscriptionCleanupRef.current();
         subscriptionCleanupRef.current = null;
       }
     };
   }, []);
 
-  // ✅ Health monitoring — detect stale connections and reconnect
+  // Health monitoring — detect stale connections and reconnect
   useEffect(() => {
     const healthCheck = setInterval(() => {
       if (!sessionIdRef.current) return;
       if (healthStore.isStale()) {
-        console.warn('⚠️ Connection appears stale (no heartbeat for 60s), reconnecting...');
+        console.warn('Connection appears stale (no heartbeat for 60s), reconnecting...');
         reconnectRef.current();
       }
     }, HEALTH_CHECK_INTERVAL_MS);
     return () => clearInterval(healthCheck);
   }, []);
 
-  // ✅ Device wake detection — reconnect after sleep / tab refocus
+  // Device wake detection — reconnect after sleep / tab refocus
   useEffect(() => {
     const handleVisibilityChange = () => {
       if (document.visibilityState !== 'visible' || !sessionIdRef.current) return;
-      console.log('📱 Page became visible, checking connection...');
+      console.log('Page became visible, checking connection...');
       if (healthStore.isStale(WAKE_THRESHOLD_MS)) {
-        console.log('⚠️ Connection may be stale after sleep, reconnecting...');
+        console.log('Connection may be stale after sleep, reconnecting...');
         healthStore.setStatus('reconnecting');
         setTimeout(() => reconnectRef.current(), 1000);
       }
@@ -189,10 +195,10 @@ export default function ControlPage() {
   // ---- Realtime subscriptions (with health wiring) ----
 
   const subscribeToSession = (sid: string) => {
-    console.log('🔌 Setting up real-time subscriptions for session:', sid, 'at', new Date().toISOString());
+    console.log('Setting up real-time subscriptions for session:', sid, 'at', new Date().toISOString());
 
     if (subscriptionCleanupRef.current) {
-      console.log('🧹 Cleaning up old subscriptions');
+      console.log('Cleaning up old subscriptions');
       subscriptionCleanupRef.current();
       subscriptionCleanupRef.current = null;
     }
@@ -212,7 +218,7 @@ export default function ControlPage() {
         }
       )
       .subscribe((status) => {
-        console.log('👥 Judges channel status:', status, 'at', new Date().toISOString());
+        console.log('Judges channel status:', status, 'at', new Date().toISOString());
         healthStore.updateChannelStatus(judgesChannelName, status);
         if (status === 'SUBSCRIBED') {
           healthStore.setStatus('connected');
@@ -220,7 +226,7 @@ export default function ControlPage() {
           healthStore.setStatus('disconnected');
           if (status === 'CHANNEL_ERROR') {
             setTimeout(() => {
-              console.log('🔄 Auto-retrying connection after channel error...');
+              console.log('Auto-retrying connection after channel error...');
               reconnectRef.current();
             }, 5000);
           }
@@ -240,7 +246,7 @@ export default function ControlPage() {
         }
       )
       .subscribe((status) => {
-        console.log('📝 Answers channel status:', status, 'at', new Date().toISOString());
+        console.log('Answers channel status:', status, 'at', new Date().toISOString());
         healthStore.updateChannelStatus(answersChannelName, status);
       });
 
@@ -257,12 +263,12 @@ export default function ControlPage() {
         }
       )
       .subscribe((status) => {
-        console.log('🏆 Results channel status:', status, 'at', new Date().toISOString());
+        console.log('Results channel status:', status, 'at', new Date().toISOString());
         healthStore.updateChannelStatus(resultsChannelName, status);
       });
 
     subscriptionCleanupRef.current = () => {
-      console.log('🧹 Unsubscribing from all channels');
+      console.log('Unsubscribing from all channels');
       healthStore.removeChannel(judgesChannelName);
       healthStore.removeChannel(answersChannelName);
       healthStore.removeChannel(resultsChannelName);
@@ -276,7 +282,7 @@ export default function ControlPage() {
     const currentSessionId = sessionIdRef.current;
     if (!currentSessionId) return;
 
-    console.log('🔄 Reconnecting subscriptions...');
+    console.log('Reconnecting subscriptions...');
     healthStore.noteReconnect();
     healthStore.setStatus('reconnecting');
 
@@ -291,7 +297,7 @@ export default function ControlPage() {
     loadLeaderboard(currentSessionId);
 
     healthStore.heartbeat();
-    console.log('✅ Reconnection complete');
+    console.log('Reconnection complete');
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
   reconnectRef.current = reconnectSubscriptions;
@@ -418,7 +424,7 @@ export default function ControlPage() {
 
       setSentForTeam(currentTeam);
       setSentCount(questionsToSend.length);
-      console.log('✅ Questions broadcasted successfully to team:', currentTeam);
+      console.log('Questions broadcasted successfully to team:', currentTeam);
     } catch (error) {
       console.error('Error sending questions:', error);
       alert('خطأ في إرسال الأسئلة');
@@ -484,340 +490,289 @@ export default function ControlPage() {
   // ---- Render ----
 
   if (authorized === null) {
-    return (
-      <div className="container">
-        <div className="card" style={{ marginTop: '80px', textAlign: 'center', padding: '40px' }}>
-          <div style={{ fontSize: '32px', marginBottom: '12px' }}>⏳</div>
-          <div>جاري تحميل الجلسة...</div>
-        </div>
-      </div>
-    );
+    return <LoadingScreen message="جاري تحميل الجلسة..." />;
   }
 
   const allSubmitted = judges.length > 0 && totalQuestions > 0 &&
     judges.every(j => judgeSubmissions[j.id] === totalQuestions);
 
+  const connMeta = {
+    connected: { icon: Wifi, label: 'متصل', cls: 'conn-chip--connected' },
+    reconnecting: { icon: RefreshCw, label: 'إعادة الاتصال...', cls: 'conn-chip--reconnecting' },
+    disconnected: { icon: WifiOff, label: 'غير متصل', cls: 'conn-chip--disconnected' }
+  }[health.status];
+  const ConnIcon = connMeta.icon;
+
   return (
-    <div className="container">
-      <div className="header">
-        <h1>التحكم بجلسة التحكيم</h1>
-        <div style={{ display: 'flex', gap: '12px', alignItems: 'center', flexWrap: 'wrap' }}>
-          <div className="session-badge">
-            <span>معرف الجلسة:</span>
-            <span>{sessionId}</span>
-          </div>
-          <Link
-            to="/health"
-            title="عرض صفحة صحة الاتصال"
-            style={{
-              padding: '8px 16px',
-              borderRadius: '8px',
-              background: health.status === 'connected' ? '#10b981' :
-                          health.status === 'reconnecting' ? '#f59e0b' : '#ef4444',
-              color: 'white',
-              fontSize: '12px',
-              fontWeight: 600,
-              display: 'flex',
-              alignItems: 'center',
-              gap: '6px',
-              textDecoration: 'none'
-            }}
-          >
-            <span>{health.status === 'connected' ? '🟢' : health.status === 'reconnecting' ? '🟡' : '🔴'}</span>
-            <span>
-              {health.status === 'connected' ? 'متصل' :
-               health.status === 'reconnecting' ? 'إعادة الاتصال...' : 'غير متصل'}
-            </span>
-          </Link>
-          <Link to="/host" className="btn btn-secondary" style={{ textDecoration: 'none', fontSize: '14px' }}>
-            ← جلساتي
-          </Link>
-        </div>
-      </div>
+    <div className="app-shell">
+      <BrandHeader title="التحكم بالجلسة">
+        <span className="session-badge" style={{ background: 'rgba(255,255,255,0.14)', color: '#fff' }}>
+          <span>معرف الجلسة</span>
+          <span className="session-badge__code">{sessionId}</span>
+        </span>
+        <Link to="/health" className={`conn-chip ${connMeta.cls}`} title="عرض صفحة صحة الاتصال">
+          <ConnIcon className={health.status === 'reconnecting' ? 'spin' : ''} />
+          {connMeta.label}
+        </Link>
+        <Link to="/host" className="btn btn-sm btn-pill btn-on-blue">
+          <ArrowRight />
+          جلساتي
+        </Link>
+      </BrandHeader>
 
-      {/* Step-by-step control guide */}
-      <div className="card" style={{ marginBottom: '24px', padding: '14px 20px' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap', justifyContent: 'center', fontSize: '14px', fontWeight: 600 }}>
-          <span>١ اختر الفريق الحالي ◀▶</span>
-          <span style={{ color: 'var(--text-secondary)' }}>←</span>
-          <span>٢ أرسل الأسئلة 📤</span>
-          <span style={{ color: 'var(--text-secondary)' }}>←</span>
-          <span>٣ تابع إرسالات المحكمين ⏳</span>
-          <span style={{ color: 'var(--text-secondary)' }}>←</span>
-          <span>٤ انتقل للفريق التالي وكرر</span>
-        </div>
-      </div>
-
-      <div className="dashboard-grid">
-        {/* Current Team Card */}
-        <div className="card">
-          <div className="card-header">
-            <div className="card-title">
-              <div className="card-icon">👥</div>
-              <span>الفريق الحالي ({currentTeamIndex + 1}/{teams.length})</span>
-            </div>
-          </div>
-          <div className="team-display">
-            <div className="team-name">{currentTeam}</div>
-          </div>
-          {sentForTeam === currentTeam && currentTeam !== 'لا يوجد' && (
-            <div style={{
-              background: '#f0fdf4', border: '2px solid #10b981', color: '#10b981',
-              borderRadius: '8px', padding: '8px 12px', textAlign: 'center',
-              fontWeight: 600, fontSize: '14px', marginBottom: '12px'
-            }}>
-              ✓ تم إرسال {sentCount} سؤال لهذا الفريق إلى المحكمين
-            </div>
-          )}
-          <div className="btn-group">
-            <button className="btn btn-secondary" onClick={handlePreviousTeam}>
-              <span>◀</span>
-              السابق
-            </button>
-            <button className="btn btn-secondary" onClick={handleNextTeam}>
-              <span>▶</span>
-              التالي
-            </button>
-            <button className="btn btn-danger" onClick={handleEndSession}>
-              <span>✕</span>
-              إنهاء
-            </button>
+      <div className="container">
+        <div className="page-head">
+          <div>
+            <h1>التحكم بجلسة التحكيم</h1>
+            <p>اختر الفريق، أرسل الأسئلة، وتابع إرسالات المحكمين في الوقت الفعلي.</p>
           </div>
         </div>
 
-        {/* Send Questions Card */}
-        <div className="card">
-          <div className="card-header">
-            <div className="card-title">
-              <div className="card-icon">📤</div>
-              <span>إرسال الأسئلة</span>
-            </div>
+        {/* Step-by-step control guide */}
+        <div className="card card--flat mb-6" style={{ padding: '14px 20px' }}>
+          <div className="stepper">
+            <span className="step step--active"><span className="step__num">١</span> اختر الفريق الحالي</span>
+            <span className="step__arrow"><ChevronLeft /></span>
+            <span className="step"><span className="step__num">٢</span> أرسل الأسئلة</span>
+            <span className="step__arrow"><ChevronLeft /></span>
+            <span className="step"><span className="step__num">٣</span> تابع إرسالات المحكمين</span>
+            <span className="step__arrow"><ChevronLeft /></span>
+            <span className="step"><span className="step__num">٤</span> انتقل للفريق التالي وكرر</span>
           </div>
-
-          {preparedQuestions.length > 0 ? (
-            <>
-              <p style={{ color: 'var(--text-secondary)', fontSize: '14px', marginTop: 0 }}>
-                الأسئلة المجهزة من صفحة الإعداد ({preparedQuestions.length} سؤال) — ستُرسل للفريق الحالي: <strong>{currentTeam}</strong>
-              </p>
-              <ul style={{ maxHeight: '220px', overflowY: 'auto', paddingRight: '20px', fontSize: '14px' }}>
-                {preparedQuestions.map(q => (
-                  <li key={q.id} style={{ marginBottom: '6px' }}>{q.text}</li>
-                ))}
-              </ul>
-            </>
-          ) : (
-            <>
-              <label htmlFor="bankSelect">بنك الأسئلة:</label>
-              <select id="bankSelect" value={selectedBank} onChange={(e) => handleBankChange(e.target.value)}>
-                <option value="">جميع الأسئلة</option>
-                {questionBanks.map(bank => (
-                  <option key={bank.id} value={bank.id}>{bank.name}</option>
-                ))}
-              </select>
-              <label htmlFor="questionSelect" style={{ marginTop: '12px' }}>اختر الأسئلة:</label>
-              <select
-                id="questionSelect"
-                multiple
-                value={selectedQuestionIds}
-                onChange={(e) => {
-                  const selected = Array.from(e.target.selectedOptions, option => option.value);
-                  setSelectedQuestionIds(selected);
-                }}
-              >
-                {questions.map(question => (
-                  <option key={question.id} value={question.id}>{question.text}</option>
-                ))}
-              </select>
-            </>
-          )}
-
-          <button className="btn btn-success" onClick={handleSendQuestions} style={{ width: '100%', marginTop: '12px' }}>
-            <span>📤</span>
-            إرسال {questionsToSend.length > 0 ? `(${questionsToSend.length} سؤال)` : 'الأسئلة'} إلى {currentTeam}
-          </button>
         </div>
 
-        {/* Judges Card */}
-        <div className="card">
-          <div className="card-header">
-            <div className="card-title">
-              <div className="card-icon">⚖️</div>
-              <span>المحكمون المتصلون</span>
+        <div className="dashboard-grid">
+          {/* Current Team Card */}
+          <div className="card">
+            <div className="card-header">
+              <div className="card-title">
+                <div className="card-icon"><Users /></div>
+                <span>الفريق الحالي ({currentTeamIndex + 1}/{teams.length})</span>
+              </div>
             </div>
-            <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-              {judges.length > 0 && totalQuestions > 0 && (
-                <div style={{
-                  background: allSubmitted ? '#10b981' : '#f59e0b',
-                  color: 'white',
-                  padding: '4px 12px',
-                  borderRadius: '12px',
-                  fontSize: '12px',
-                  fontWeight: 600
-                }}>
-                  {judges.filter(j => judgeSubmissions[j.id] === totalQuestions).length}/{judges.length} أرسلوا
-                </div>
-              )}
-              <button
-                onClick={() => {
-                  console.log('🔄 Manual refresh triggered');
-                  reconnectSubscriptions();
-                }}
-                style={{
-                  padding: '6px 12px',
-                  background: 'var(--primary-color)',
-                  color: 'white',
-                  border: 'none',
-                  borderRadius: '8px',
-                  cursor: 'pointer',
-                  fontSize: '12px',
-                  fontWeight: 600,
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '4px'
-                }}
-                title="تحديث الاتصال"
-              >
-                <span>🔄</span>
-                <span>تحديث</span>
+            <div className="team-display">
+              <div className="team-display__label">يتم تحكيم</div>
+              <div className="team-name">{currentTeam}</div>
+            </div>
+            {sentForTeam === currentTeam && currentTeam !== 'لا يوجد' && (
+              <div className="alert alert-success mb-3">
+                <CheckCircle2 />
+                <span>تم إرسال {sentCount} سؤال لهذا الفريق إلى المحكمين</span>
+              </div>
+            )}
+            <div className="btn-group">
+              <button className="btn btn-secondary" onClick={handlePreviousTeam}>
+                <ChevronRight />
+                السابق
+              </button>
+              <button className="btn btn-secondary" onClick={handleNextTeam}>
+                التالي
+                <ChevronLeft />
+              </button>
+              <button className="btn btn-danger" onClick={handleEndSession}>
+                <Square />
+                إنهاء
               </button>
             </div>
           </div>
-          <ul className="judge-list" style={{ listStyle: 'none', padding: 0, margin: 0 }}>
-            {judges.length === 0 ? (
-              <li className="empty-state">لا يوجد محكمون متصلون</li>
-            ) : (
-              judges.map(judge => {
-                const judgeAnswerCount = judgeSubmissions[judge.id] || 0;
-                const hasSubmitted = totalQuestions > 0 && judgeAnswerCount === totalQuestions;
 
-                return (
-                  <li key={judge.id} style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'space-between',
-                    padding: '12px',
-                    background: hasSubmitted ? '#f0fdf4' : (totalQuestions > 0 ? '#fef3c7' : 'white'),
-                    borderRadius: '8px',
-                    marginBottom: '8px',
-                    border: `2px solid ${hasSubmitted ? '#10b981' : (totalQuestions > 0 ? '#f59e0b' : 'var(--border-color)')}`,
-                    transition: 'all 0.2s'
-                  }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                      <span style={{ fontSize: '20px' }}>
-                        {hasSubmitted ? '✅' : (totalQuestions > 0 ? '⏳' : '👤')}
-                      </span>
-                      <span style={{ fontWeight: 600, color: 'var(--text-primary)' }}>
-                        {judge.name}
-                      </span>
-                    </div>
-                    {totalQuestions > 0 && (
-                      <div style={{
-                        fontSize: '12px',
-                        color: hasSubmitted ? '#10b981' : '#f59e0b',
-                        fontWeight: 600,
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: '4px'
-                      }}>
-                        {hasSubmitted ? (
-                          <>
-                            <span>تم الإرسال</span>
-                            <span style={{ background: '#10b981', color: 'white', padding: '2px 6px', borderRadius: '4px', fontSize: '11px' }}>
-                              {judgeAnswerCount}/{totalQuestions}
-                            </span>
-                          </>
-                        ) : (
-                          <>
-                            <span>{judgeAnswerCount}/{totalQuestions}</span>
-                            <span>أسئلة</span>
-                          </>
-                        )}
-                      </div>
-                    )}
-                  </li>
-                );
-              })
-            )}
-          </ul>
-        </div>
-
-        {/* Answers Card */}
-        <div className="card">
-          <div className="card-header">
-            <div className="card-title">
-              <div className="card-icon">📝</div>
-              <span>الإجابات</span>
+          {/* Send Questions Card */}
+          <div className="card">
+            <div className="card-header">
+              <div className="card-title">
+                <div className="card-icon"><Send /></div>
+                <span>إرسال الأسئلة</span>
+              </div>
             </div>
-          </div>
-          <div className="answers-container">
-            {Object.keys(answers).length === 0 ? (
-              <div className="empty-state">لم يتم استلام إجابات بعد</div>
+
+            {preparedQuestions.length > 0 ? (
+              <>
+                <p className="card-desc">
+                  الأسئلة المجهزة من صفحة الإعداد ({preparedQuestions.length} سؤال) ستُرسل للفريق الحالي: <strong>{currentTeam}</strong>
+                </p>
+                <ol style={{ maxHeight: '220px', overflowY: 'auto', paddingInlineStart: '22px', fontSize: '14px' }}>
+                  {preparedQuestions.map(q => (
+                    <li key={q.id} className="mb-2">{q.text}</li>
+                  ))}
+                </ol>
+              </>
             ) : (
-              Object.entries(answers).map(([team, teamAnswers]) => (
-                <div key={team} className="answer-item">
-                  <strong>{team}</strong>
-                  <ul>
-                    {teamAnswers.map((answer, idx) => (
-                      <li key={idx}>{answer.player}: {answer.answer}</li>
+              <>
+                <div className="field">
+                  <label htmlFor="bankSelect">بنك الأسئلة</label>
+                  <select id="bankSelect" value={selectedBank} onChange={(e) => handleBankChange(e.target.value)}>
+                    <option value="">جميع الأسئلة</option>
+                    {questionBanks.map(bank => (
+                      <option key={bank.id} value={bank.id}>{bank.name}</option>
                     ))}
-                  </ul>
+                  </select>
                 </div>
-              ))
+                <div className="field">
+                  <label htmlFor="questionSelect">اختر الأسئلة</label>
+                  <select
+                    id="questionSelect"
+                    multiple
+                    value={selectedQuestionIds}
+                    onChange={(e) => {
+                      const selected = Array.from(e.target.selectedOptions, option => option.value);
+                      setSelectedQuestionIds(selected);
+                    }}
+                  >
+                    {questions.map(question => (
+                      <option key={question.id} value={question.id}>{question.text}</option>
+                    ))}
+                  </select>
+                </div>
+              </>
             )}
-          </div>
-        </div>
 
-        {/* Leaderboard Card */}
-        <div className="card" style={{ gridColumn: 'span 2' }}>
-          <div className="card-header">
-            <div className="card-title">
-              <div className="card-icon">🏆</div>
-              <span>لوحة المتصدرين</span>
-            </div>
+            <button className="btn btn-primary btn-lg btn-block mt-3" onClick={handleSendQuestions}>
+              <Send />
+              إرسال {questionsToSend.length > 0 ? `(${questionsToSend.length} سؤال)` : 'الأسئلة'} إلى {currentTeam}
+            </button>
           </div>
-          <table className="leaderboard-table">
-            <thead>
-              <tr>
-                <th>الفريق</th>
-                <th style={{ textAlign: 'left' }}>إجمالي النقاط</th>
-              </tr>
-            </thead>
-            <tbody>
-              {leaderboard.length === 0 ? (
-                <tr>
-                  <td colSpan={2} className="empty-state">لا توجد نتائج بعد</td>
-                </tr>
+
+          {/* Judges Card */}
+          <div className="card">
+            <div className="card-header">
+              <div className="card-title">
+                <div className="card-icon"><Scale /></div>
+                <span>المحكمون المتصلون</span>
+              </div>
+              <div className="flex gap-2 items-center">
+                {judges.length > 0 && totalQuestions > 0 && (
+                  <span className={`badge ${allSubmitted ? 'badge-success' : 'badge-warning'}`}>
+                    {judges.filter(j => judgeSubmissions[j.id] === totalQuestions).length}/{judges.length} أرسلوا
+                  </span>
+                )}
+                <button
+                  className="btn btn-outline btn-sm btn-pill"
+                  onClick={() => {
+                    console.log('Manual refresh triggered');
+                    reconnectSubscriptions();
+                  }}
+                  title="تحديث الاتصال"
+                >
+                  <RefreshCw />
+                  تحديث
+                </button>
+              </div>
+            </div>
+            <ul className="list-plain">
+              {judges.length === 0 ? (
+                <li className="empty-state">
+                  <Scale />
+                  لا يوجد محكمون متصلون
+                </li>
               ) : (
-                leaderboard.map((entry, idx) => (
-                  <tr key={idx}>
-                    <td>{entry.teamName}</td>
-                    <td style={{ textAlign: 'left', fontWeight: 600, color: 'var(--primary-color)' }}>
-                      {entry.totalPoints.toFixed(2)}
-                    </td>
-                  </tr>
+                judges.map(judge => {
+                  const judgeAnswerCount = judgeSubmissions[judge.id] || 0;
+                  const hasSubmitted = totalQuestions > 0 && judgeAnswerCount === totalQuestions;
+                  const rowCls = hasSubmitted ? 'list-row--success' : (totalQuestions > 0 ? 'list-row--warning' : '');
+                  const avatarCls = hasSubmitted ? 'avatar--success' : (totalQuestions > 0 ? 'avatar--warning' : '');
+
+                  return (
+                    <li key={judge.id} className={`list-row ${rowCls}`}>
+                      <div className="list-row__main">
+                        <span className={`avatar ${avatarCls}`}>
+                          {hasSubmitted ? <CheckCircle2 /> : (totalQuestions > 0 ? <Clock /> : <UserRound />)}
+                        </span>
+                        <span className="fw-600">{judge.name}</span>
+                      </div>
+                      {totalQuestions > 0 && (
+                        <span className={`badge ${hasSubmitted ? 'badge-success' : 'badge-warning'}`}>
+                          {hasSubmitted ? 'تم الإرسال' : 'قيد الإجابة'}
+                          <span className="mono">{judgeAnswerCount}/{totalQuestions}</span>
+                        </span>
+                      )}
+                    </li>
+                  );
+                })
+              )}
+            </ul>
+          </div>
+
+          {/* Answers Card */}
+          <div className="card">
+            <div className="card-header">
+              <div className="card-title">
+                <div className="card-icon"><FileText /></div>
+                <span>الإجابات</span>
+              </div>
+            </div>
+            <div className="answers-container">
+              {Object.keys(answers).length === 0 ? (
+                <div className="empty-state">
+                  <FileText />
+                  لم يتم استلام إجابات بعد
+                </div>
+              ) : (
+                Object.entries(answers).map(([team, teamAnswers]) => (
+                  <div key={team} className="answer-item">
+                    <strong>{team}</strong>
+                    <ul>
+                      {teamAnswers.map((answer, idx) => (
+                        <li key={idx}>{answer.player}: {answer.answer}</li>
+                      ))}
+                    </ul>
+                  </div>
                 ))
               )}
-            </tbody>
-          </table>
-        </div>
-      </div>
+            </div>
+          </div>
 
-      {/* Quick Actions */}
-      <div className="quick-actions">
-        <h3>الإجراءات السريعة</h3>
-        <div className="action-links">
-          <Link to="/questions" className="btn btn-success">
-            <span>➕</span>
-            إضافة/تعديل الأسئلة
-          </Link>
-          <Link to="/results" className="btn btn-primary">
-            <span>📊</span>
-            عرض النتائج
-          </Link>
-          <Link to="/health" className="btn btn-secondary">
-            <span>💓</span>
-            صحة الاتصال
-          </Link>
+          {/* Leaderboard Card */}
+          <div className="card span-2">
+            <div className="card-header">
+              <div className="card-title">
+                <div className="card-icon"><Trophy /></div>
+                <span>لوحة المتصدرين</span>
+              </div>
+            </div>
+            <table className="leaderboard-table">
+              <thead>
+                <tr>
+                  <th style={{ width: '56px' }}>#</th>
+                  <th>الفريق</th>
+                  <th className="num">إجمالي النقاط</th>
+                </tr>
+              </thead>
+              <tbody>
+                {leaderboard.length === 0 ? (
+                  <tr>
+                    <td colSpan={3} className="empty-state">لا توجد نتائج بعد</td>
+                  </tr>
+                ) : (
+                  leaderboard.map((entry, idx) => (
+                    <tr key={idx}>
+                      <td><span className={`rank-badge rank-badge--${idx + 1}`}>{idx + 1}</span></td>
+                      <td className="fw-600">{entry.teamName}</td>
+                      <td className="num fw-700 text-primary">{entry.totalPoints.toFixed(2)}</td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        {/* Quick Actions */}
+        <div className="quick-actions">
+          <h3>الإجراءات السريعة</h3>
+          <div className="action-links">
+            <Link to="/questions" className="btn btn-secondary btn-pill">
+              <Plus />
+              إضافة/تعديل الأسئلة
+            </Link>
+            <Link to="/results" className="btn btn-primary btn-pill">
+              <BarChart3 />
+              عرض النتائج
+            </Link>
+            <Link to="/health" className="btn btn-secondary btn-pill">
+              <HeartPulse />
+              صحة الاتصال
+            </Link>
+          </div>
         </div>
       </div>
     </div>

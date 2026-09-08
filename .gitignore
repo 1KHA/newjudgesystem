@@ -46,3 +46,4 @@ seed-admin.js
 drop-judge-name-constraint.sql
 .env.localold
 src/types/database.types.ts
+/visual_identity

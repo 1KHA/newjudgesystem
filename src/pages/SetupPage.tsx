@@ -10,12 +10,18 @@ import {
   getJudgesBySession
 } from '../lib/supabaseService';
 import type { Team, Question, QuestionBank, Judge } from '../types';
+import {
+  ArrowRight, ArrowUp, ArrowDown, Users, HelpCircle, Scale, Check, CheckCheck, X,
+  Plus, Minus, Pencil, Trash2, Save, Loader2, Link2, Copy, Clock, Play, UserRound,
+  AlertTriangle, ChevronLeft
+} from 'lucide-react';
+import BrandHeader from '../components/BrandHeader';
 
 /**
  * Guided session setup — the ONLY 3 things an admin needs before judging starts:
- *   Step 1 👥 Teams          (add + select participating teams)
- *   Step 2 ❓ Question bank   (choose bank + questions)
- *   Step 3 ⚖️ Judges          (create session → share unique judge link → watch judges join)
+ *   Step 1 Teams          (add + select participating teams)
+ *   Step 2 Question bank  (choose bank + questions)
+ *   Step 3 Judges         (create session, share unique judge link, watch judges join)
  * Everything else lives on the control page.
  */
 export default function SetupPage() {
@@ -329,412 +335,421 @@ export default function SetupPage() {
     navigate(`/host/${sessionId}/control`);
   };
 
-  const stepBadge = (done: boolean, active: boolean) => (
-    <span style={{
-      display: 'inline-flex',
-      alignItems: 'center',
-      justifyContent: 'center',
-      width: '32px',
-      height: '32px',
-      borderRadius: '50%',
-      fontWeight: 700,
-      fontSize: '16px',
-      background: done ? '#10b981' : active ? 'var(--primary-color)' : '#d1d5db',
-      color: 'white',
-      flexShrink: 0
-    }}>
-      {done ? '✓' : ''}
-    </span>
+
+  const stepClass = (done: boolean, active: boolean) =>
+    `step ${done ? 'step--done' : active ? 'step--active' : ''}`;
+
+  const stepNum = (n: number, done: boolean) => (
+    <span className="step__num">{done ? <Check /> : n}</span>
   );
 
   return (
-    <div className="container">
-      <div className="header">
-        <h1>إعداد جلسة تحكيم جديدة</h1>
-        <Link to="/host" className="btn btn-secondary" style={{ textDecoration: 'none', fontSize: '14px' }}>
-          ← جلساتي
+    <div className="app-shell">
+      <BrandHeader title="إعداد جلسة جديدة">
+        <Link to="/host" className="btn btn-sm btn-pill btn-on-blue">
+          <ArrowRight />
+          جلساتي
         </Link>
-      </div>
+      </BrandHeader>
 
-      {/* Progress guide */}
-      <div className="card" style={{ marginBottom: '24px', padding: '16px 20px' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap', justifyContent: 'center' }}>
-          <span style={{ display: 'flex', alignItems: 'center', gap: '6px', fontWeight: 600 }}>
-            {stepBadge(step1Done, true)} 👥 الفرق {step1Done && `(${selectedTeams.length})`}
-          </span>
-          <span style={{ color: 'var(--text-secondary)' }}>←</span>
-          <span style={{ display: 'flex', alignItems: 'center', gap: '6px', fontWeight: 600 }}>
-            {stepBadge(step2Done, step1Done)} ❓ الأسئلة {step2Done && `(${selectedQuestions.length})`}
-          </span>
-          <span style={{ color: 'var(--text-secondary)' }}>←</span>
-          <span style={{ display: 'flex', alignItems: 'center', gap: '6px', fontWeight: 600 }}>
-            {stepBadge(sessionCreated, step1Done && step2Done)} ⚖️ المحكمون {sessionCreated && `(${judges.length})`}
-          </span>
-        </div>
-      </div>
-
-      <div className="dashboard-grid">
-        {/* ============ STEP 1: TEAMS ============ */}
-        <div className="card">
-          <div className="card-header">
-            <div className="card-title">
-              <div className="card-icon">👥</div>
-              <span>الخطوة 1: الفرق</span>
-            </div>
-            {step1Done && (
-              <div style={{ background: '#10b981', color: 'white', padding: '4px 12px', borderRadius: '12px', fontSize: '12px', fontWeight: 600 }}>
-                ✓ {selectedTeams.length} فريق محدد
-              </div>
-            )}
+      <div className="container">
+        <div className="page-head">
+          <div>
+            <h1>إعداد جلسة تحكيم جديدة</h1>
+            <p>ثلاث خطوات فقط: حدد الفرق، اختر الأسئلة، ثم شارك رابط المحكمين.</p>
           </div>
-          <p style={{ color: 'var(--text-secondary)', fontSize: '14px', marginTop: 0 }}>
-            أضف الفرق المشاركة ثم حددها بالضغط عليها.
-          </p>
+        </div>
 
-          {/* Add Team Form */}
-          <div style={{ marginBottom: '20px', padding: '16px', background: 'var(--secondary-light)', borderRadius: '8px' }}>
-            <label style={{ display: 'block', marginBottom: '8px', fontWeight: 500 }}>➕ إضافة فريق جديد</label>
-            <div style={{ display: 'flex', gap: '8px' }}>
-              <input
-                type="text"
-                value={newTeamName}
-                onChange={(e) => setNewTeamName(e.target.value)}
-                onKeyPress={(e) => e.key === 'Enter' && handleAddTeam()}
-                placeholder="اسم الفريق"
-                style={{ flex: 1, padding: '8px 12px', border: '2px solid var(--border-color)', borderRadius: '6px' }}
-              />
-              <button className="btn btn-success" onClick={handleAddTeam} style={{ padding: '8px 16px' }}>
-                إضافة
+        {/* Progress guide */}
+        <div className="card card--flat mb-6" style={{ padding: '14px 20px' }}>
+          <div className="stepper">
+            <span className={stepClass(step1Done, true)}>
+              {stepNum(1, step1Done)}
+              <Users size={16} />
+              الفرق {step1Done && `(${selectedTeams.length})`}
+            </span>
+            <span className="step__arrow"><ChevronLeft /></span>
+            <span className={stepClass(step2Done, step1Done)}>
+              {stepNum(2, step2Done)}
+              <HelpCircle size={16} />
+              الأسئلة {step2Done && `(${selectedQuestions.length})`}
+            </span>
+            <span className="step__arrow"><ChevronLeft /></span>
+            <span className={stepClass(sessionCreated, step1Done && step2Done)}>
+              {stepNum(3, sessionCreated)}
+              <Scale size={16} />
+              المحكمون {sessionCreated && `(${judges.length})`}
+            </span>
+          </div>
+        </div>
+
+        <div className="dashboard-grid">
+          {/* ============ STEP 1: TEAMS ============ */}
+          <div className="card">
+            <div className="card-header">
+              <div className="card-title">
+                <div className="card-icon"><Users /></div>
+                <span>الخطوة 1: الفرق</span>
+              </div>
+              {step1Done && (
+                <span className="badge badge-success">
+                  <Check />
+                  {selectedTeams.length} فريق محدد
+                </span>
+              )}
+            </div>
+            <p className="card-desc">أضف الفرق المشاركة ثم حددها بالضغط عليها.</p>
+
+            {/* Add Team Form */}
+            <div className="panel panel--muted mb-5">
+              <label htmlFor="newTeamName">إضافة فريق جديد</label>
+              <div className="field-row">
+                <input
+                  id="newTeamName"
+                  type="text"
+                  value={newTeamName}
+                  onChange={(e) => setNewTeamName(e.target.value)}
+                  onKeyDown={(e) => e.key === 'Enter' && handleAddTeam()}
+                  placeholder="اسم الفريق"
+                />
+                <button className="btn btn-primary" onClick={handleAddTeam}>
+                  <Plus />
+                  إضافة
+                </button>
+              </div>
+            </div>
+
+            {/* Bulk Actions */}
+            <div className="flex gap-2 mb-4">
+              <button className="btn btn-secondary btn-sm flex-1" onClick={() => setSelectedTeams(teams.map(t => t.name))}>
+                <CheckCheck />
+                تحديد الكل
+              </button>
+              <button className="btn btn-secondary btn-sm flex-1" onClick={() => setSelectedTeams([])}>
+                <X />
+                إلغاء الكل
               </button>
             </div>
-          </div>
 
-          {/* Bulk Actions */}
-          <div style={{ display: 'flex', gap: '8px', marginBottom: '16px' }}>
-            <button className="btn btn-secondary" onClick={() => setSelectedTeams(teams.map(t => t.name))}
-              style={{ flex: 1, fontSize: '14px', padding: '8px' }}>
-              ✓ تحديد الكل
-            </button>
-            <button className="btn btn-secondary" onClick={() => setSelectedTeams([])}
-              style={{ flex: 1, fontSize: '14px', padding: '8px' }}>
-              ✕ إلغاء الكل
-            </button>
-          </div>
-
-          {/* Teams Grid */}
-          <div style={{
-            display: 'grid',
-            gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))',
-            gap: '12px',
-            maxHeight: '400px',
-            overflowY: 'auto',
-            padding: '4px'
-          }}>
-            {teams.map((team, index) => {
-              const isSelected = selectedTeams.includes(team.name);
-              const isEditing = editingTeamId === team.id;
-
-              return (
-                <div
-                  key={team.id}
-                  style={{
-                    background: isSelected ? 'linear-gradient(135deg, #761814, #5a120f)' : 'white',
-                    border: `2px solid ${isSelected ? '#761814' : 'var(--border-color)'}`,
-                    borderRadius: '12px',
-                    padding: '12px',
-                    cursor: 'pointer',
-                    transition: 'all 0.2s',
-                    transform: isSelected ? 'scale(1.02)' : 'scale(1)',
-                    boxShadow: isSelected ? '0 4px 6px rgba(118, 24, 20, 0.2)' : 'none'
-                  }}
-                  onClick={() => !isEditing && toggleTeamSelection(team.name)}
-                >
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
-                    <input
-                      type="checkbox"
-                      checked={isSelected}
-                      onChange={() => toggleTeamSelection(team.name)}
-                      onClick={(e) => e.stopPropagation()}
-                      style={{ width: '18px', height: '18px', cursor: 'pointer' }}
-                    />
-                    {isEditing ? (
-                      <input
-                        type="text"
-                        value={editingTeamName}
-                        onChange={(e) => setEditingTeamName(e.target.value)}
-                        onKeyPress={(e) => {
-                          if (e.key === 'Enter') handleEditTeam(team.id, editingTeamName);
-                          if (e.key === 'Escape') { setEditingTeamId(null); setEditingTeamName(''); }
-                        }}
-                        onClick={(e) => e.stopPropagation()}
-                        autoFocus
-                        style={{ flex: 1, padding: '4px 8px', border: '1px solid var(--border-color)', borderRadius: '4px', fontSize: '14px' }}
-                      />
-                    ) : (
-                      <span style={{ flex: 1, fontWeight: 600, color: isSelected ? 'white' : 'var(--text-primary)', fontSize: '14px' }}>
-                        {team.name}
-                      </span>
-                    )}
-                  </div>
-
-                  <div style={{ display: 'flex', gap: '4px', justifyContent: 'space-between' }} onClick={(e) => e.stopPropagation()}>
-                    <div style={{ display: 'flex', gap: '4px' }}>
-                      <button
-                        onClick={() => handleMoveTeam(index, index - 1)}
-                        disabled={index === 0}
-                        style={{
-                          padding: '4px 8px', background: isSelected ? 'rgba(255,255,255,0.2)' : 'var(--secondary-light)',
-                          border: 'none', borderRadius: '4px', cursor: index === 0 ? 'not-allowed' : 'pointer',
-                          opacity: index === 0 ? 0.5 : 1, color: isSelected ? 'white' : 'var(--text-primary)', fontSize: '12px'
-                        }}
-                        title="تحريك لأعلى"
-                      >↑</button>
-                      <button
-                        onClick={() => handleMoveTeam(index, index + 1)}
-                        disabled={index === teams.length - 1}
-                        style={{
-                          padding: '4px 8px', background: isSelected ? 'rgba(255,255,255,0.2)' : 'var(--secondary-light)',
-                          border: 'none', borderRadius: '4px', cursor: index === teams.length - 1 ? 'not-allowed' : 'pointer',
-                          opacity: index === teams.length - 1 ? 0.5 : 1, color: isSelected ? 'white' : 'var(--text-primary)', fontSize: '12px'
-                        }}
-                        title="تحريك لأسفل"
-                      >↓</button>
-                    </div>
-
-                    <div style={{ display: 'flex', gap: '4px' }}>
-                      {isEditing ? (
-                        <>
-                          <button onClick={() => handleEditTeam(team.id, editingTeamName)}
-                            style={{ padding: '4px 8px', background: '#10b981', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer', fontSize: '12px' }}
-                            title="حفظ">✓</button>
-                          <button onClick={() => { setEditingTeamId(null); setEditingTeamName(''); }}
-                            style={{ padding: '4px 8px', background: '#ef4444', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer', fontSize: '12px' }}
-                            title="إلغاء">✕</button>
-                        </>
-                      ) : (
-                        <>
-                          <button onClick={() => { setEditingTeamId(team.id); setEditingTeamName(team.name); }}
-                            style={{ padding: '4px 8px', background: isSelected ? 'rgba(255,255,255,0.2)' : 'var(--secondary-light)', border: 'none', borderRadius: '4px', cursor: 'pointer', color: isSelected ? 'white' : 'var(--text-primary)', fontSize: '12px' }}
-                            title="تعديل">✏️</button>
-                          <button onClick={() => handleDeleteTeam(team.id, team.name)}
-                            style={{ padding: '4px 8px', background: isSelected ? 'rgba(255,255,255,0.2)' : 'var(--secondary-light)', border: 'none', borderRadius: '4px', cursor: 'pointer', color: isSelected ? 'white' : '#ef4444', fontSize: '12px' }}
-                            title="حذف">🗑️</button>
-                        </>
-                      )}
-                    </div>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-
-        {/* ============ STEP 2: QUESTIONS ============ */}
-        <div className="card">
-          <div className="card-header">
-            <div className="card-title">
-              <div className="card-icon">❓</div>
-              <span>الخطوة 2: بنك الأسئلة</span>
-            </div>
-            {step2Done && (
-              <div style={{ background: '#10b981', color: 'white', padding: '4px 12px', borderRadius: '12px', fontSize: '12px', fontWeight: 600 }}>
-                ✓ {selectedQuestions.length} سؤال
-              </div>
-            )}
-          </div>
-          <p style={{ color: 'var(--text-secondary)', fontSize: '14px', marginTop: 0 }}>
-            اختر بنك الأسئلة ثم حدد الأسئلة التي ستُرسل للمحكمين.
-          </p>
-
-          {/* Optional: create a new bank inline, same pattern as adding teams above */}
-          <div style={{ marginBottom: '20px', padding: '16px', background: 'var(--secondary-light)', borderRadius: '8px' }}>
-            <button
-              className="btn btn-secondary"
-              onClick={() => setShowBankForm(prev => !prev)}
-              style={{ width: '100%' }}
+            {/* Teams Grid */}
+            <div
+              style={{
+                display: 'grid',
+                gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))',
+                gap: '12px',
+                maxHeight: '400px',
+                overflowY: 'auto',
+                padding: '4px'
+              }}
             >
-              <span>{showBankForm ? '✕' : '➕'}</span>
-              {showBankForm ? 'إلغاء' : 'إنشاء بنك أسئلة جديد (اختياري)'}
-            </button>
+              {teams.length === 0 && (
+                <div className="empty-state" style={{ gridColumn: '1 / -1' }}>
+                  <Users />
+                  <h3>لا توجد فرق بعد</h3>
+                  <p>أضف أول فريق من الحقل أعلاه</p>
+                </div>
+              )}
+              {teams.map((team, index) => {
+                const isSelected = selectedTeams.includes(team.name);
+                const isEditing = editingTeamId === team.id;
 
-            {showBankForm && (
-              <div style={{ marginTop: '16px' }}>
-                <label style={{ display: 'block', marginBottom: '8px', fontWeight: 500 }}>اسم بنك الأسئلة</label>
-                <input
-                  type="text"
-                  value={newBankName}
-                  onChange={(e) => setNewBankName(e.target.value)}
-                  placeholder="مثال: أسئلة الجولة الأولى"
-                  style={{ width: '100%', padding: '8px 12px', border: '2px solid var(--border-color)', borderRadius: '6px', marginBottom: '16px' }}
-                />
-
-                {newBankQuestions.map((q, qIdx) => (
-                  <div key={qIdx} style={{ background: 'white', border: '2px solid var(--border-color)', borderRadius: '8px', padding: '12px', marginBottom: '12px' }}>
-                    <div style={{ display: 'flex', gap: '8px', marginBottom: '8px' }}>
-                      <textarea
-                        value={q.text}
-                        onChange={(e) => updateNewBankQuestionText(qIdx, e.target.value)}
-                        placeholder={`نص السؤال ${qIdx + 1}`}
-                        style={{ flex: 1, padding: '8px', border: '2px solid var(--border-color)', borderRadius: '6px', fontSize: '14px', minHeight: '50px', resize: 'vertical' }}
+                return (
+                  <div
+                    key={team.id}
+                    className={`team-tile ${isSelected ? 'team-tile--selected' : ''}`}
+                    onClick={() => !isEditing && toggleTeamSelection(team.name)}
+                  >
+                    <div className="team-tile__row">
+                      <input
+                        type="checkbox"
+                        checked={isSelected}
+                        onChange={() => toggleTeamSelection(team.name)}
+                        onClick={(e) => e.stopPropagation()}
+                        style={{ width: '18px' }}
                       />
-                      {newBankQuestions.length > 1 && (
-                        <button className="btn btn-danger btn-sm" onClick={() => removeNewBankQuestion(qIdx)} title="حذف السؤال">🗑️</button>
-                      )}
-                    </div>
-                    {q.choices.map((c, cIdx) => (
-                      <div key={cIdx} style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px' }}>
-                        <span style={{ color: 'var(--primary-color)' }}>•</span>
+                      {isEditing ? (
                         <input
                           type="text"
-                          value={c.text}
-                          onChange={(e) => updateNewBankChoiceText(qIdx, cIdx, e.target.value)}
-                          placeholder={`خيار ${cIdx + 1}`}
-                          style={{ flex: 1, padding: '6px 8px', border: '2px solid var(--border-color)', borderRadius: '6px', fontSize: '13px' }}
+                          value={editingTeamName}
+                          onChange={(e) => setEditingTeamName(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') handleEditTeam(team.id, editingTeamName);
+                            if (e.key === 'Escape') { setEditingTeamId(null); setEditingTeamName(''); }
+                          }}
+                          onClick={(e) => e.stopPropagation()}
+                          autoFocus
+                          style={{ flex: 1, padding: '4px 8px', fontSize: '14px' }}
                         />
-                      </div>
-                    ))}
-                    <div style={{ display: 'flex', gap: '8px' }}>
-                      <button className="btn btn-secondary btn-sm" onClick={() => addNewBankChoice(qIdx)}>➕ خيار</button>
-                      {q.choices.length > 1 && (
-                        <button className="btn btn-secondary btn-sm" onClick={() => removeNewBankChoice(qIdx)}>➖ خيار</button>
+                      ) : (
+                        <span className="team-tile__name">{team.name}</span>
                       )}
                     </div>
+
+                    <div className="team-tile__actions" onClick={(e) => e.stopPropagation()}>
+                      <div>
+                        <button
+                          className={`icon-btn ${isSelected ? 'icon-btn--on-primary' : ''}`}
+                          onClick={() => handleMoveTeam(index, index - 1)}
+                          disabled={index === 0}
+                          title="تحريك لأعلى"
+                          aria-label="تحريك لأعلى"
+                        ><ArrowUp /></button>
+                        <button
+                          className={`icon-btn ${isSelected ? 'icon-btn--on-primary' : ''}`}
+                          onClick={() => handleMoveTeam(index, index + 1)}
+                          disabled={index === teams.length - 1}
+                          title="تحريك لأسفل"
+                          aria-label="تحريك لأسفل"
+                        ><ArrowDown /></button>
+                      </div>
+
+                      <div>
+                        {isEditing ? (
+                          <>
+                            <button className="icon-btn icon-btn--success" onClick={() => handleEditTeam(team.id, editingTeamName)} title="حفظ" aria-label="حفظ"><Check /></button>
+                            <button className="icon-btn icon-btn--danger" onClick={() => { setEditingTeamId(null); setEditingTeamName(''); }} title="إلغاء" aria-label="إلغاء"><X /></button>
+                          </>
+                        ) : (
+                          <>
+                            <button
+                              className={`icon-btn ${isSelected ? 'icon-btn--on-primary' : ''}`}
+                              onClick={() => { setEditingTeamId(team.id); setEditingTeamName(team.name); }}
+                              title="تعديل"
+                              aria-label="تعديل"
+                            ><Pencil /></button>
+                            <button
+                              className={`icon-btn ${isSelected ? 'icon-btn--on-primary' : 'icon-btn--danger'}`}
+                              onClick={() => handleDeleteTeam(team.id, team.name)}
+                              title="حذف"
+                              aria-label="حذف"
+                            ><Trash2 /></button>
+                          </>
+                        )}
+                      </div>
+                    </div>
                   </div>
-                ))}
-
-                <div style={{ display: 'flex', gap: '8px' }}>
-                  <button className="btn btn-secondary" onClick={addNewBankQuestion} style={{ flex: 1 }}>
-                    <span>➕</span> إضافة سؤال آخر
-                  </button>
-                  <button className="btn btn-success" onClick={handleCreateBank} disabled={savingBank} style={{ flex: 1 }}>
-                    <span>💾</span> {savingBank ? 'جاري الحفظ...' : 'حفظ البنك'}
-                  </button>
-                </div>
-              </div>
-            )}
-          </div>
-
-          <label htmlFor="bankSelect">بنك الأسئلة:</label>
-          <select
-            id="bankSelect"
-            value={selectedBank}
-            onChange={(e) => handleBankChange(e.target.value)}
-          >
-            <option value="">جميع الأسئلة</option>
-            {questionBanks.map(bank => (
-              <option key={bank.id} value={bank.id}>{bank.name}</option>
-            ))}
-          </select>
-
-          <label htmlFor="questionSelect" style={{ marginTop: '12px' }}>اختر الأسئلة:</label>
-          <select
-            id="questionSelect"
-            multiple
-            value={selectedQuestions}
-            onChange={(e) => {
-              const selected = Array.from(e.target.selectedOptions, option => option.value);
-              setSelectedQuestions(selected);
-            }}
-          >
-            {questions.map(question => (
-              <option key={question.id} value={question.id}>{question.text}</option>
-            ))}
-          </select>
-        </div>
-
-        {/* ============ STEP 3: JUDGES ============ */}
-        <div className="card" style={{ gridColumn: 'span 2' }}>
-          <div className="card-header">
-            <div className="card-title">
-              <div className="card-icon">⚖️</div>
-              <span>الخطوة 3: المحكمون</span>
+                );
+              })}
             </div>
-            {sessionCreated && (
-              <div style={{ background: judges.length > 0 ? '#10b981' : '#f59e0b', color: 'white', padding: '4px 12px', borderRadius: '12px', fontSize: '12px', fontWeight: 600 }}>
-                {judges.length > 0 ? `✓ ${judges.length} محكم انضم` : '⏳ بانتظار المحكمين'}
-              </div>
-            )}
           </div>
 
-          {!sessionCreated ? (
-            <>
-              <p style={{ color: 'var(--text-secondary)', fontSize: '14px', marginTop: 0 }}>
-                بعد إكمال الخطوتين 1 و 2، أنشئ الجلسة للحصول على رابط خاص ترسله للمحكمين.
-              </p>
-              <button
-                className="btn btn-primary"
-                onClick={handleCreateSession}
-                disabled={!step1Done || !step2Done || creating}
-                style={{ width: '100%' }}
-                title={!step1Done ? 'أكمل الخطوة 1 أولاً' : !step2Done ? 'أكمل الخطوة 2 أولاً' : ''}
-              >
-                <span>🔗</span>
-                {creating ? 'جاري الإنشاء...' : 'إنشاء الجلسة ورابط المحكمين'}
-              </button>
-              {(!step1Done || !step2Done) && (
-                <p style={{ color: '#f59e0b', fontSize: '13px', textAlign: 'center', marginBottom: 0 }}>
-                  {!step1Done ? '← أكمل الخطوة 1: حدد فريقًا واحدًا على الأقل' : '← أكمل الخطوة 2: اختر سؤالًا واحدًا على الأقل'}
-                </p>
+          {/* ============ STEP 2: QUESTIONS ============ */}
+          <div className="card">
+            <div className="card-header">
+              <div className="card-title">
+                <div className="card-icon"><HelpCircle /></div>
+                <span>الخطوة 2: بنك الأسئلة</span>
+              </div>
+              {step2Done && (
+                <span className="badge badge-success">
+                  <Check />
+                  {selectedQuestions.length} سؤال
+                </span>
               )}
-            </>
-          ) : (
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '20px' }}>
-              {/* Judge link panel */}
-              <div style={{ padding: '16px', background: 'var(--secondary-light)', borderRadius: '12px' }}>
-                <h3 style={{ marginTop: 0, fontSize: '16px' }}>🔗 رابط انضمام المحكمين</h3>
-                <p style={{ color: 'var(--text-secondary)', fontSize: '13px' }}>
-                  أرسل هذا الرابط للمحكمين — كل جلسة لها رابط خاص لا يتعارض مع الجلسات الأخرى.
-                </p>
-                <div style={{
-                  fontFamily: 'monospace', fontSize: '13px', background: 'white', padding: '10px',
-                  borderRadius: '8px', border: '2px solid var(--border-color)',
-                  wordBreak: 'break-all', marginBottom: '10px', direction: 'ltr', textAlign: 'left'
-                }}>
-                  {judgeUrl}
-                </div>
-                <div style={{ textAlign: 'center', marginBottom: '10px' }}>
-                  <span style={{ fontSize: '13px', color: 'var(--text-secondary)' }}>كود الجلسة:</span>
-                  <span style={{ fontFamily: 'monospace', fontSize: '28px', fontWeight: 700, display: 'block', letterSpacing: '2px' }}>
-                    {sessionId}
-                  </span>
-                </div>
-                <button className="btn btn-secondary" onClick={handleCopyLink} style={{ width: '100%' }}>
-                  <span>{copied ? '✅' : '📋'}</span>
-                  {copied ? 'تم النسخ!' : 'نسخ الرابط'}
-                </button>
-              </div>
-
-              {/* Live judges list */}
-              <div>
-                <h3 style={{ marginTop: 0, fontSize: '16px' }}>⚖️ المحكمون المنضمون ({judges.length})</h3>
-                <ul style={{ listStyle: 'none', padding: 0, margin: 0, maxHeight: '220px', overflowY: 'auto' }}>
-                  {judges.length === 0 ? (
-                    <li className="empty-state">بانتظار انضمام المحكمين عبر الرابط...</li>
-                  ) : (
-                    judges.map(judge => (
-                      <li key={judge.id} style={{
-                        display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 12px',
-                        background: '#f0fdf4', border: '2px solid #10b981', borderRadius: '8px', marginBottom: '8px'
-                      }}>
-                        <span style={{ fontSize: '18px' }}>👤</span>
-                        <span style={{ fontWeight: 600 }}>{judge.name}</span>
-                      </li>
-                    ))
-                  )}
-                </ul>
-
-                <button className="btn btn-success" onClick={handleStartJudging} style={{ width: '100%', marginTop: '12px' }}>
-                  <span>🚀</span>
-                  بدء جلسة التحكيم {judges.length > 0 ? `(${judges.length} محكم)` : ''}
-                </button>
-                {judges.length === 0 && (
-                  <p style={{ color: '#f59e0b', fontSize: '13px', textAlign: 'center', marginBottom: 0 }}>
-                    يمكنك البدء الآن والمحكمون ينضمون لاحقًا، لكن يُفضّل انتظار انضمامهم
-                  </p>
-                )}
-              </div>
             </div>
-          )}
+            <p className="card-desc">اختر بنك الأسئلة ثم حدد الأسئلة التي ستُرسل للمحكمين.</p>
+
+            {/* Optional: create a new bank inline, same pattern as adding teams above */}
+            <div className="panel panel--muted mb-5">
+              <button
+                className={`btn ${showBankForm ? 'btn-secondary' : 'btn-outline'} btn-block`}
+                onClick={() => setShowBankForm(prev => !prev)}
+              >
+                {showBankForm ? <X /> : <Plus />}
+                {showBankForm ? 'إلغاء' : 'إنشاء بنك أسئلة جديد (اختياري)'}
+              </button>
+
+              {showBankForm && (
+                <div className="mt-4">
+                  <div className="field">
+                    <label htmlFor="newBankName">اسم بنك الأسئلة</label>
+                    <input
+                      id="newBankName"
+                      type="text"
+                      value={newBankName}
+                      onChange={(e) => setNewBankName(e.target.value)}
+                      placeholder="مثال: أسئلة الجولة الأولى"
+                    />
+                  </div>
+
+                  {newBankQuestions.map((q, qIdx) => (
+                    <div key={qIdx} className="panel mb-3">
+                      <div className="field-row mb-2" style={{ alignItems: 'flex-start' }}>
+                        <textarea
+                          value={q.text}
+                          onChange={(e) => updateNewBankQuestionText(qIdx, e.target.value)}
+                          placeholder={`نص السؤال ${qIdx + 1}`}
+                          style={{ minHeight: '50px' }}
+                        />
+                        {newBankQuestions.length > 1 && (
+                          <button className="icon-btn icon-btn--danger" onClick={() => removeNewBankQuestion(qIdx)} title="حذف السؤال" aria-label="حذف السؤال">
+                            <Trash2 />
+                          </button>
+                        )}
+                      </div>
+                      {q.choices.map((c, cIdx) => (
+                        <div key={cIdx} className="field-row mb-2">
+                          <span className="choice-chip__bullet" />
+                          <input
+                            type="text"
+                            value={c.text}
+                            onChange={(e) => updateNewBankChoiceText(qIdx, cIdx, e.target.value)}
+                            placeholder={`خيار ${cIdx + 1}`}
+                            style={{ padding: '6px 10px', fontSize: '13px' }}
+                          />
+                        </div>
+                      ))}
+                      <div className="flex gap-2">
+                        <button className="btn btn-secondary btn-sm" onClick={() => addNewBankChoice(qIdx)}>
+                          <Plus />
+                          خيار
+                        </button>
+                        {q.choices.length > 1 && (
+                          <button className="btn btn-secondary btn-sm" onClick={() => removeNewBankChoice(qIdx)}>
+                            <Minus />
+                            خيار
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+
+                  <div className="flex gap-2">
+                    <button className="btn btn-secondary flex-1" onClick={addNewBankQuestion}>
+                      <Plus />
+                      إضافة سؤال آخر
+                    </button>
+                    <button className="btn btn-primary flex-1" onClick={handleCreateBank} disabled={savingBank}>
+                      {savingBank ? <Loader2 className="spin" /> : <Save />}
+                      {savingBank ? 'جاري الحفظ...' : 'حفظ البنك'}
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <div className="field">
+              <label htmlFor="bankSelect">بنك الأسئلة</label>
+              <select
+                id="bankSelect"
+                value={selectedBank}
+                onChange={(e) => handleBankChange(e.target.value)}
+              >
+                <option value="">جميع الأسئلة</option>
+                {questionBanks.map(bank => (
+                  <option key={bank.id} value={bank.id}>{bank.name}</option>
+                ))}
+              </select>
+            </div>
+
+            <div className="field">
+              <label htmlFor="questionSelect">اختر الأسئلة</label>
+              <select
+                id="questionSelect"
+                multiple
+                value={selectedQuestions}
+                onChange={(e) => {
+                  const selected = Array.from(e.target.selectedOptions, option => option.value);
+                  setSelectedQuestions(selected);
+                }}
+              >
+                {questions.map(question => (
+                  <option key={question.id} value={question.id}>{question.text}</option>
+                ))}
+              </select>
+              <p className="text-xs text-secondary mt-2">اضغط مع الاستمرار على Ctrl أو لتحديد أكثر من سؤال.</p>
+            </div>
+          </div>
+
+          {/* ============ STEP 3: JUDGES ============ */}
+          <div className="card span-2">
+            <div className="card-header">
+              <div className="card-title">
+                <div className="card-icon"><Scale /></div>
+                <span>الخطوة 3: المحكمون</span>
+              </div>
+              {sessionCreated && (
+                <span className={`badge ${judges.length > 0 ? 'badge-success' : 'badge-warning'}`}>
+                  {judges.length > 0 ? <Check /> : <Clock />}
+                  {judges.length > 0 ? `${judges.length} محكم انضم` : 'بانتظار المحكمين'}
+                </span>
+              )}
+            </div>
+
+            {!sessionCreated ? (
+              <>
+                <p className="card-desc">
+                  بعد إكمال الخطوتين 1 و 2، أنشئ الجلسة للحصول على رابط خاص ترسله للمحكمين.
+                </p>
+                <button
+                  className="btn btn-primary btn-lg btn-block"
+                  onClick={handleCreateSession}
+                  disabled={!step1Done || !step2Done || creating}
+                  title={!step1Done ? 'أكمل الخطوة 1 أولاً' : !step2Done ? 'أكمل الخطوة 2 أولاً' : ''}
+                >
+                  {creating ? <Loader2 className="spin" /> : <Link2 />}
+                  {creating ? 'جاري الإنشاء...' : 'إنشاء الجلسة ورابط المحكمين'}
+                </button>
+                {(!step1Done || !step2Done) && (
+                  <div className="alert alert-warning mt-3 mb-0">
+                    <AlertTriangle />
+                    <span>
+                      {!step1Done ? 'أكمل الخطوة 1: حدد فريقًا واحدًا على الأقل' : 'أكمل الخطوة 2: اختر سؤالًا واحدًا على الأقل'}
+                    </span>
+                  </div>
+                )}
+              </>
+            ) : (
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '20px' }}>
+                {/* Judge link panel */}
+                <div className="panel panel--tint">
+                  <h3 className="panel-title"><Link2 /> رابط انضمام المحكمين</h3>
+                  <p className="text-sm text-secondary mb-3">
+                    أرسل هذا الرابط للمحكمين. كل جلسة لها رابط خاص لا يتعارض مع الجلسات الأخرى.
+                  </p>
+                  <div className="link-box">{judgeUrl}</div>
+                  <div className="text-center mb-3">
+                    <span className="text-sm text-secondary">كود الجلسة</span>
+                    <span className="session-code">{sessionId}</span>
+                  </div>
+                  <button className={`btn ${copied ? 'btn-success' : 'btn-primary'} btn-block`} onClick={handleCopyLink}>
+                    {copied ? <Check /> : <Copy />}
+                    {copied ? 'تم النسخ' : 'نسخ الرابط'}
+                  </button>
+                </div>
+
+                {/* Live judges list */}
+                <div>
+                  <h3 className="panel-title"><Scale /> المحكمون المنضمون ({judges.length})</h3>
+                  <ul className="list-plain" style={{ maxHeight: '220px', overflowY: 'auto' }}>
+                    {judges.length === 0 ? (
+                      <li className="empty-state">
+                        <Clock />
+                        بانتظار انضمام المحكمين عبر الرابط...
+                      </li>
+                    ) : (
+                      judges.map(judge => (
+                        <li key={judge.id} className="list-row list-row--success" style={{ justifyContent: 'flex-start' }}>
+                          <span className="avatar avatar--success"><UserRound /></span>
+                          <span className="fw-600">{judge.name}</span>
+                        </li>
+                      ))
+                    )}
+                  </ul>
+
+                  <button className="btn btn-primary btn-lg btn-block mt-3" onClick={handleStartJudging}>
+                    <Play />
+                    بدء جلسة التحكيم {judges.length > 0 ? `(${judges.length} محكم)` : ''}
+                  </button>
+                  {judges.length === 0 && (
+                    <p className="text-sm text-warning text-center mt-2 mb-0">
+                      يمكنك البدء الآن والمحكمون ينضمون لاحقًا، لكن يُفضّل انتظار انضمامهم
+                    </p>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
         </div>
       </div>
     </div>

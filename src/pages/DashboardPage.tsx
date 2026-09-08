@@ -1,7 +1,20 @@
 import { useState, useEffect, useCallback } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
+import {
+  Plus,
+  LogOut,
+  User,
+  Users,
+  Calendar,
+  ListChecks,
+  Archive,
+  SlidersHorizontal,
+  BarChart3,
+  Inbox
+} from 'lucide-react';
 import { useAuth } from '../hooks/useAuth';
 import { getSessionsByHost } from '../lib/supabaseService';
+import BrandHeader from '../components/BrandHeader';
 import type { Session } from '../types';
 
 /**
@@ -47,120 +60,124 @@ export default function DashboardPage() {
   const pastSessions = sessions.filter(s => !isActive(s));
 
   const renderSessionRow = (session: Session, active: boolean) => (
-    <li key={session.id} style={{
-      display: 'flex',
-      alignItems: 'center',
-      justifyContent: 'space-between',
-      gap: '12px',
-      padding: '14px 16px',
-      background: 'white',
-      border: `2px solid ${active ? '#10b981' : 'var(--border-color)'}`,
-      borderRadius: '12px',
-      marginBottom: '10px',
-      flexWrap: 'wrap'
-    }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
-        <span style={{
-          background: active ? '#10b981' : '#9ca3af',
-          color: 'white',
-          padding: '3px 10px',
-          borderRadius: '10px',
-          fontSize: '12px',
-          fontWeight: 600
-        }}>
-          {active ? '🟢 نشطة' : '⚪ منتهية'}
+    <li key={session.id} className={`list-row ${active ? 'list-row--active' : ''}`}>
+      <div className="list-row__main">
+        <span className={`badge badge-dot ${active ? 'badge-success badge-pulse' : 'badge-neutral'}`}>
+          {active ? 'نشطة' : 'منتهية'}
         </span>
-        <span style={{ fontFamily: 'monospace', fontWeight: 700, fontSize: '16px' }}>
+        <span className="mono fw-700" style={{ fontSize: '15px' }}>
           {session.session_id}
         </span>
-        <span style={{ color: 'var(--text-secondary)', fontSize: '13px' }}>
-          {session.created_at ? new Date(session.created_at).toLocaleString() : ''}
+        <span className="list-row__meta">
+          <Calendar />
+          {session.created_at ? new Date(session.created_at).toLocaleString('ar-SA') : ''}
         </span>
-        <span style={{ color: 'var(--text-secondary)', fontSize: '13px' }}>
-          👥 {session.teams?.length ?? 0} فريق
+        <span className="list-row__meta">
+          <Users />
+          {session.teams?.length ?? 0} فريق
         </span>
       </div>
-      <div style={{ display: 'flex', gap: '8px' }}>
+      <div className="list-row__actions">
         {active && (
-          <Link to={`/host/${session.session_id}/control`} className="btn btn-primary"
-            style={{ textDecoration: 'none', fontSize: '13px', padding: '6px 14px' }}>
-            🎛️ استئناف التحكم
+          <Link to={`/host/${session.session_id}/control`} className="btn btn-primary btn-sm btn-pill">
+            <SlidersHorizontal />
+            استئناف التحكم
           </Link>
         )}
-        <Link to="/results" className="btn btn-secondary"
-          style={{ textDecoration: 'none', fontSize: '13px', padding: '6px 14px' }}>
-          📊 النتائج
+        <Link to="/results" className="btn btn-secondary btn-sm btn-pill">
+          <BarChart3 />
+          النتائج
         </Link>
       </div>
     </li>
   );
 
   return (
-    <div className="container">
-      <div className="header">
-        <h1>جلساتي</h1>
-        <div style={{ display: 'flex', gap: '12px', alignItems: 'center', flexWrap: 'wrap' }}>
-          <span style={{ color: 'var(--text-secondary)', fontSize: '14px' }}>
-            👤 {user?.email}
-          </span>
-          <button className="btn btn-secondary" onClick={handleSignOut}
-            style={{ fontSize: '13px', padding: '6px 14px' }}>
-            🚪 تسجيل خروج
-          </button>
-        </div>
-      </div>
+    <div className="app-shell">
+      <BrandHeader title="جلساتي">
+        <span className="brand-header__user">
+          <User size={14} />
+          {user?.email}
+        </span>
+        <button className="btn btn-sm btn-pill btn-on-blue" onClick={handleSignOut}>
+          <LogOut />
+          تسجيل خروج
+        </button>
+      </BrandHeader>
 
-      <div className="card" style={{ marginBottom: '24px' }}>
-        <div className="card-header">
-          <div className="card-title">
-            <div className="card-icon">➕</div>
-            <span>جلسة تحكيم جديدة</span>
+      <div className="container">
+        <div className="page-head">
+          <div>
+            <h1>جلساتي</h1>
+            <p>أنشئ جلسات التحكيم وتابع الجلسات النشطة والسابقة من مكان واحد.</p>
+          </div>
+          <div className="page-head__actions">
+            <Link to="/host/new" className="btn btn-primary btn-pill">
+              <Plus />
+              إنشاء جلسة جديدة
+            </Link>
           </div>
         </div>
-        <p style={{ color: 'var(--text-secondary)', marginTop: 0 }}>
-          أنشئ جلسة جديدة بثلاث خطوات بسيطة: الفرق ← بنك الأسئلة ← دعوة المحكمين برابط خاص.
-        </p>
-        <Link to="/host/new" className="btn btn-success" style={{ textDecoration: 'none', width: '100%' }}>
-          <span>🚀</span>
-          إنشاء جلسة جديدة
-        </Link>
-      </div>
 
-      <div className="card">
-        <div className="card-header">
-          <div className="card-title">
-            <div className="card-icon">📋</div>
-            <span>الجلسات النشطة ({activeSessions.length})</span>
-          </div>
-        </div>
-        {loading ? (
-          <div className="empty-state">جاري التحميل...</div>
-        ) : error ? (
-          <div className="empty-state">{error}</div>
-        ) : (
-          <ul style={{ listStyle: 'none', padding: 0, margin: 0 }}>
-            {activeSessions.length === 0 ? (
-              <li className="empty-state">لا توجد جلسات نشطة — أنشئ جلسة جديدة للبدء</li>
-            ) : (
-              activeSessions.map(s => renderSessionRow(s, true))
-            )}
-          </ul>
-        )}
-      </div>
-
-      {pastSessions.length > 0 && (
-        <div className="card" style={{ marginTop: '24px' }}>
+        <div className="card mb-6">
           <div className="card-header">
             <div className="card-title">
-              <div className="card-icon">🗂️</div>
-              <span>الجلسات السابقة ({pastSessions.length})</span>
+              <div className="card-icon"><Plus /></div>
+              <span>جلسة تحكيم جديدة</span>
             </div>
           </div>
-          <ul style={{ listStyle: 'none', padding: 0, margin: 0 }}>
-            {pastSessions.map(s => renderSessionRow(s, false))}
-          </ul>
+          <p className="card-desc">
+            أنشئ جلسة جديدة بثلاث خطوات بسيطة: الفرق، ثم بنك الأسئلة، ثم دعوة المحكمين برابط خاص.
+          </p>
+          <Link to="/host/new" className="btn btn-primary btn-lg btn-block">
+            <Plus />
+            إنشاء جلسة جديدة
+          </Link>
         </div>
-      )}
+
+        <div className="card">
+          <div className="card-header">
+            <div className="card-title">
+              <div className="card-icon"><ListChecks /></div>
+              <span>الجلسات النشطة ({activeSessions.length})</span>
+            </div>
+          </div>
+          {loading ? (
+            <div className="loading-screen" style={{ minHeight: '120px' }}>
+              <div className="spinner" />
+              <div>جاري التحميل...</div>
+            </div>
+          ) : error ? (
+            <div className="empty-state">{error}</div>
+          ) : (
+            <ul className="list-plain">
+              {activeSessions.length === 0 ? (
+                <li className="empty-state">
+                  <Inbox />
+                  <h3>لا توجد جلسات نشطة</h3>
+                  <p>أنشئ جلسة جديدة للبدء</p>
+                </li>
+              ) : (
+                activeSessions.map(s => renderSessionRow(s, true))
+              )}
+            </ul>
+          )}
+        </div>
+
+        {pastSessions.length > 0 && (
+          <div className="card mt-5">
+            <div className="card-header">
+              <div className="card-title">
+                <div className="card-icon"><Archive /></div>
+                <span>الجلسات السابقة ({pastSessions.length})</span>
+              </div>
+            </div>
+            <ul className="list-plain">
+              {pastSessions.map(s => renderSessionRow(s, false))}
+            </ul>
+          </div>
+        )}
+      </div>
     </div>
   );
 }

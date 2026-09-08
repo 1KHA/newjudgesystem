@@ -1,5 +1,6 @@
 import { useState, type FormEvent } from 'react';
 import { useNavigate, Navigate } from 'react-router-dom';
+import { AlertCircle, LogIn, Loader2 } from 'lucide-react';
 import { useAuth } from '../hooks/useAuth';
 
 export default function LoginPage() {
@@ -10,7 +11,7 @@ export default function LoginPage() {
   const [error, setError] = useState('');
   const [submitting, setSubmitting] = useState(false);
 
-  // Already logged in → go straight to the dashboard
+  // Already logged in: go straight to the dashboard
   if (!loading && user) {
     return <Navigate to="/host" replace />;
   }
@@ -35,78 +36,48 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="container" style={{ maxWidth: '480px' }}>
-      <div className="header">
-        <h1>تسجيل دخول المشرف</h1>
-      </div>
+    <div className="auth-page">
+      <div className="auth-card">
+        <img src="/brand/logo.png" alt="مياهثون" className="auth-card__logo" />
+        <h1 className="auth-card__title">تسجيل دخول المشرف</h1>
+        <p className="auth-card__subtitle">نظام التحكيم — دخول المشرفين فقط</p>
 
-      <div className="card">
-        <div className="card-header">
-          <div className="card-title">
-            <div className="card-icon">🔐</div>
-            <span>دخول المشرفين</span>
+        <form onSubmit={handleSubmit} noValidate>
+          <div className="field">
+            <label htmlFor="email">البريد الإلكتروني</label>
+            <input
+              id="email"
+              type="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              placeholder="admin@example.com"
+              autoComplete="email"
+              dir="ltr"
+            />
           </div>
-        </div>
 
-        <form onSubmit={handleSubmit}>
-          <label htmlFor="email">البريد الإلكتروني</label>
-          <input
-            id="email"
-            type="email"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            placeholder="admin@example.com"
-            autoComplete="email"
-            style={{
-              width: '100%',
-              padding: '10px 12px',
-              border: '2px solid var(--border-color)',
-              borderRadius: '8px',
-              marginBottom: '16px',
-              boxSizing: 'border-box'
-            }}
-          />
-
-          <label htmlFor="password">كلمة المرور</label>
-          <input
-            id="password"
-            type="password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            placeholder="••••••••"
-            autoComplete="current-password"
-            style={{
-              width: '100%',
-              padding: '10px 12px',
-              border: '2px solid var(--border-color)',
-              borderRadius: '8px',
-              marginBottom: '16px',
-              boxSizing: 'border-box'
-            }}
-          />
+          <div className="field">
+            <label htmlFor="password">كلمة المرور</label>
+            <input
+              id="password"
+              type="password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              placeholder="••••••••"
+              autoComplete="current-password"
+              dir="ltr"
+            />
+          </div>
 
           {error && (
-            <div style={{
-              background: '#fef2f2',
-              border: '1px solid #ef4444',
-              color: '#ef4444',
-              padding: '10px 12px',
-              borderRadius: '8px',
-              marginBottom: '16px',
-              fontSize: '14px',
-              fontWeight: 600
-            }}>
-              ⚠️ {error}
+            <div className="alert alert-danger" role="alert">
+              <AlertCircle />
+              <span>{error}</span>
             </div>
           )}
 
-          <button
-            type="submit"
-            className="btn btn-primary"
-            disabled={submitting}
-            style={{ width: '100%' }}
-          >
-            <span>{submitting ? '⏳' : '🚀'}</span>
+          <button type="submit" className="btn btn-primary btn-lg btn-block" disabled={submitting}>
+            {submitting ? <Loader2 className="spin" /> : <LogIn />}
             {submitting ? 'جاري الدخول...' : 'دخول'}
           </button>
         </form>

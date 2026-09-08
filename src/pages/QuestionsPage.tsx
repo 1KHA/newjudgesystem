@@ -3,6 +3,10 @@ import { useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { getQuestions } from '../lib/supabaseService';
 import type { Question } from '../types';
+import {
+  ArrowRight, Plus, Minus, Library, ClipboardList, Folder, FolderPlus, Trash2, PieChart, Save
+} from 'lucide-react';
+import BrandHeader from '../components/BrandHeader';
 
 interface Choice {
   text: string;
@@ -261,7 +265,7 @@ export default function QuestionsPage() {
 
       if (questionsError) throw questionsError;
 
-      alert(`✅ تم حفظ ${questionsToInsert.length} سؤال في البنك بنجاح!`);
+      alert(`تم حفظ ${questionsToInsert.length} سؤال في البنك بنجاح`);
       
       // Reset form
       setSections([]);
@@ -277,374 +281,275 @@ export default function QuestionsPage() {
   const pointsDistribution = calculatePointsDistribution();
 
   return (
-    <div className="container">
-      <div className="header">
-        <h1 style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-          <span>📝</span>
-          إدارة الأسئلة
-        </h1>
-        <p style={{ color: 'var(--text-secondary)', marginTop: '8px', fontSize: '16px' }}>
-          قم بإنشاء وتنظيم الأسئلة في أقسام مختلفة مع تحديد الأوزان والنقاط
-        </p>
-      </div>
-
-      <div style={{ marginBottom: '20px', display: 'flex', gap: '12px' }}>
-        <button 
-          className={`btn ${showExisting ? 'btn-secondary' : 'btn-primary'}`}
-          onClick={() => setShowExisting(false)}
-        >
-          <span>➕</span>
-          إضافة أسئلة جديدة
-        </button>
-        <button 
-          className={`btn ${showExisting ? 'btn-primary' : 'btn-secondary'}`}
-          onClick={() => setShowExisting(true)}
-        >
-          <span>📚</span>
-          عرض الأسئلة الموجودة
-        </button>
-        <button className="btn btn-secondary" onClick={() => navigate('/host')} style={{ marginRight: 'auto' }}>
-          <span>🔙</span>
+    <div className="app-shell">
+      <BrandHeader title="إدارة الأسئلة">
+        <button className="btn btn-sm btn-pill btn-on-blue" onClick={() => navigate('/host')}>
+          <ArrowRight />
           العودة للإدارة
         </button>
-      </div>
+      </BrandHeader>
 
-      {showExisting ? (
-        // Existing Questions View
-        <div className="card">
-          <div className="card-header">
-            <div className="card-title">
-              <div className="card-icon">📚</div>
-              <span>الأسئلة الموجودة ({existingQuestions.length})</span>
-            </div>
+      <div className="container">
+        <div className="page-head">
+          <div>
+            <h1>إدارة الأسئلة</h1>
+            <p>قم بإنشاء وتنظيم الأسئلة في أقسام مختلفة مع تحديد الأوزان والنقاط.</p>
           </div>
-          
-          {loading ? (
-            <div className="empty-state">جاري التحميل...</div>
-          ) : existingQuestions.length === 0 ? (
-            <div className="empty-state">
-              <div style={{ fontSize: '48px', marginBottom: '16px', opacity: 0.5 }}>📋</div>
-              <h3>لا توجد أسئلة</h3>
-              <p>ابدأ بإضافة أسئلة جديدة</p>
-            </div>
-          ) : (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-              {existingQuestions.map((question, index) => (
-                <div key={question.id} style={{
-                  background: 'var(--secondary-light)',
-                  padding: '20px',
-                  borderRadius: '8px',
-                  borderRight: '4px solid var(--primary-color)',
-                  position: 'relative'
-                }}>
-                  <div style={{
-                    position: 'absolute',
-                    top: '16px',
-                    left: '16px',
-                    background: 'var(--primary-color)',
-                    color: 'white',
-                    width: '28px',
-                    height: '28px',
-                    borderRadius: '50%',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    fontWeight: 600,
-                    fontSize: '14px'
-                  }}>
-                    {index + 1}
-                  </div>
-                  
-                  <div style={{ fontSize: '16px', fontWeight: 500, marginBottom: '12px', paddingLeft: '40px' }}>
-                    {question.text}
-                  </div>
-                  
-                  <div style={{
-                    display: 'grid',
-                    gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
-                    gap: '8px'
-                  }}>
-                    {question.choices.map((choice, idx) => {
-                      const choiceText = typeof choice === 'string' ? choice : choice.text;
-                      const choiceWeight = typeof choice === 'string' ? 1 : choice.weight;
-                      return (
-                        <div key={idx} style={{
-                          padding: '8px 12px',
-                          background: 'white',
-                          border: '2px solid var(--border-color)',
-                          borderRadius: '6px',
-                          fontSize: '14px',
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'space-between',
-                          gap: '8px'
-                        }}>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                            <span style={{ color: 'var(--primary-color)', fontWeight: 'bold' }}>•</span>
-                            <span>{choiceText}</span>
-                          </div>
-                          {typeof choice !== 'string' && (
-                            <span style={{ 
-                              fontSize: '12px', 
-                              color: 'var(--text-secondary)',
-                              background: 'var(--secondary-light)',
-                              padding: '2px 8px',
-                              borderRadius: '4px'
-                            }}>
-                              وزن: {choiceWeight}
-                            </span>
-                          )}
-                        </div>
-                      );
-                    })}
-                  </div>
-                  
-                  <div style={{ marginTop: '12px', paddingTop: '12px', borderTop: '1px solid var(--border-color)', fontSize: '12px', color: 'var(--text-secondary)' }}>
-                    <strong>القسم:</strong> {question.section} | <strong>الوزن:</strong> {question.weight}
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
         </div>
-      ) : (
-        // Add New Questions View
-        <>
-          <div className="card" style={{ padding: '20px', display: 'flex', flexWrap: 'wrap', gap: '20px', alignItems: 'flex-end' }}>
-            <div style={{ flex: 1, minWidth: '200px' }}>
-              <label style={{ display: 'block', marginBottom: '8px', fontWeight: 500, color: 'var(--text-secondary)', fontSize: '14px' }}>
-                اسم بنك الأسئلة
-              </label>
-              <input
-                type="text"
-                value={bankName}
-                onChange={(e) => setBankName(e.target.value)}
-                placeholder="أدخل اسم البنك (مطلوب)"
-                style={{ width: '100%', padding: '10px 12px', border: '2px solid var(--border-color)', borderRadius: '6px', fontSize: '14px' }}
-              />
-            </div>
-            <div style={{ flex: 1, minWidth: '200px' }}>
-              <label style={{ display: 'block', marginBottom: '8px', fontWeight: 500, color: 'var(--text-secondary)', fontSize: '14px' }}>
-                إجمالي النقاط
-              </label>
-              <input
-                type="number"
-                value={totalPoints}
-                onChange={(e) => setTotalPoints(parseFloat(e.target.value) || 100)}
-                min="1"
-                style={{ width: '100%', padding: '10px 12px', border: '2px solid var(--border-color)', borderRadius: '6px', fontSize: '14px' }}
-              />
-            </div>
-            <button className="btn btn-primary" onClick={addSection}>
-              <span>➕</span>
-              إضافة قسم جديد
-            </button>
-          </div>
 
-          {sections.length === 0 ? (
-            <div className="card">
-              <div className="empty-state">
-                <div style={{ fontSize: '48px', marginBottom: '16px', opacity: 0.5 }}>📋</div>
-                <p>لا توجد أقسام بعد. اضغط على "إضافة قسم جديد" للبدء</p>
+        <div className="tabs">
+          <button
+            className={`btn btn-pill ${showExisting ? 'btn-secondary' : 'btn-primary'}`}
+            onClick={() => setShowExisting(false)}
+          >
+            <Plus />
+            إضافة أسئلة جديدة
+          </button>
+          <button
+            className={`btn btn-pill ${showExisting ? 'btn-primary' : 'btn-secondary'}`}
+            onClick={() => setShowExisting(true)}
+          >
+            <Library />
+            عرض الأسئلة الموجودة
+          </button>
+        </div>
+
+        {showExisting ? (
+          // Existing Questions View
+          <div className="card">
+            <div className="card-header">
+              <div className="card-title">
+                <div className="card-icon"><Library /></div>
+                <span>الأسئلة الموجودة ({existingQuestions.length})</span>
               </div>
             </div>
-          ) : (
-            sections.map((section) => (
-              <div key={section.id} className="card" style={{ borderRight: '4px solid var(--primary-color)' }}>
-                <div style={{
-                  display: 'flex',
-                  justifyContent: 'space-between',
-                  alignItems: 'center',
-                  paddingBottom: '16px',
-                  marginBottom: '20px',
-                  borderBottom: '2px solid var(--border-color)'
-                }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                    <span style={{ fontSize: '20px' }}>📂</span>
-                    <input
-                      type="text"
-                      value={section.name}
-                      onChange={(e) => updateSectionName(section.id, e.target.value)}
-                      placeholder="اسم القسم"
-                      style={{
-                        fontSize: '18px',
-                        fontWeight: 600,
-                        border: '2px solid transparent',
-                        padding: '8px 12px',
-                        borderRadius: '6px',
-                        background: 'var(--secondary-light)'
-                      }}
-                    />
-                  </div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                    <label>الوزن:</label>
-                    <input
-                      type="number"
-                      value={section.weight}
-                      onChange={(e) => updateSectionWeight(section.id, parseFloat(e.target.value) || 1)}
-                      min="0.1"
-                      step="0.1"
-                      style={{ width: '80px', padding: '8px', border: '2px solid var(--border-color)', borderRadius: '6px', textAlign: 'center' }}
-                    />
-                    <button className="btn btn-danger btn-sm" onClick={() => removeSection(section.id)}>
-                      <span>🗑️</span>
-                    </button>
-                  </div>
-                </div>
 
-                {section.questions.map((question, qIdx) => (
-                  <div key={qIdx} style={{
-                    background: 'var(--secondary-light)',
-                    borderRadius: '8px',
-                    padding: '16px',
-                    marginBottom: '16px',
-                    position: 'relative'
-                  }}>
-                    <div style={{
-                      position: 'absolute',
-                      top: '16px',
-                      left: '16px',
-                      background: 'var(--primary-color)',
-                      color: 'white',
-                      width: '28px',
-                      height: '28px',
-                      borderRadius: '50%',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      fontWeight: 600,
-                      fontSize: '14px'
-                    }}>
-                      {qIdx + 1}
+            {loading ? (
+              <div className="loading-screen" style={{ minHeight: '140px' }}>
+                <div className="spinner" />
+                <div>جاري التحميل...</div>
+              </div>
+            ) : existingQuestions.length === 0 ? (
+              <div className="empty-state">
+                <ClipboardList />
+                <h3>لا توجد أسئلة</h3>
+                <p>ابدأ بإضافة أسئلة جديدة</p>
+              </div>
+            ) : (
+              <div className="flex" style={{ flexDirection: 'column', gap: '16px' }}>
+                {existingQuestions.map((question, index) => (
+                  <div key={question.id} className="question-block">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="question-block__num">{index + 1}</span>
+                      <span className="badge badge-neutral">{question.section}</span>
+                    </div>
+                    <div className="question-block__text">{question.text}</div>
+
+                    <div className="choice-grid">
+                      {question.choices.map((choice, idx) => {
+                        const choiceText = typeof choice === 'string' ? choice : choice.text;
+                        const choiceWeight = typeof choice === 'string' ? 1 : choice.weight;
+                        return (
+                          <div key={idx} className="choice-chip">
+                            <div className="flex items-center gap-2">
+                              <span className="choice-chip__bullet" />
+                              <span>{choiceText}</span>
+                            </div>
+                            {typeof choice !== 'string' && (
+                              <span className="badge badge-primary">وزن: {choiceWeight}</span>
+                            )}
+                          </div>
+                        );
+                      })}
                     </div>
 
-                    <textarea
-                      value={question.text}
-                      onChange={(e) => updateQuestionText(section.id, qIdx, e.target.value)}
-                      placeholder="اكتب نص السؤال هنا..."
-                      style={{
-                        width: '100%',
-                        padding: '10px',
-                        border: '2px solid var(--border-color)',
-                        borderRadius: '6px',
-                        fontSize: '14px',
-                        resize: 'vertical',
-                        minHeight: '80px',
-                        marginBottom: '12px'
-                      }}
-                    />
+                    <div className="text-xs text-secondary mt-3" style={{ paddingTop: '12px', borderTop: '1px solid var(--border)' }}>
+                      <strong>القسم:</strong> {question.section} <span style={{ margin: '0 6px' }}>|</span> <strong>الوزن:</strong> {question.weight}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        ) : (
+          // Add New Questions View
+          <>
+            <div className="card mb-5" style={{ display: 'flex', flexWrap: 'wrap', gap: '20px', alignItems: 'flex-end' }}>
+              <div style={{ flex: 1, minWidth: '200px' }}>
+                <label htmlFor="bankName">اسم بنك الأسئلة</label>
+                <input
+                  id="bankName"
+                  type="text"
+                  value={bankName}
+                  onChange={(e) => setBankName(e.target.value)}
+                  placeholder="أدخل اسم البنك (مطلوب)"
+                />
+              </div>
+              <div style={{ flex: 1, minWidth: '200px' }}>
+                <label htmlFor="totalPoints">إجمالي النقاط</label>
+                <input
+                  id="totalPoints"
+                  type="number"
+                  value={totalPoints}
+                  onChange={(e) => setTotalPoints(parseFloat(e.target.value) || 100)}
+                  min="1"
+                />
+              </div>
+              <button className="btn btn-primary" onClick={addSection}>
+                <FolderPlus />
+                إضافة قسم جديد
+              </button>
+            </div>
 
-                    {question.choices.map((choice, cIdx) => (
-                      <div key={cIdx} style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '8px' }}>
-                        <span style={{ color: 'var(--primary-color)', fontSize: '20px', fontWeight: 'bold' }}>•</span>
-                        <input
-                          type="text"
-                          value={choice.text}
-                          onChange={(e) => updateChoice(section.id, qIdx, cIdx, e.target.value)}
-                          placeholder={`خيار ${cIdx + 1}`}
-                          style={{ flex: 1, padding: '10px', border: '2px solid var(--border-color)', borderRadius: '6px', fontSize: '14px' }}
-                        />
-                        <label style={{ margin: '0 8px' }}>الوزن:</label>
-                        <input
-                          type="number"
-                          value={choice.weight}
-                          onChange={(e) => updateChoiceWeight(section.id, qIdx, cIdx, parseFloat(e.target.value) || 0)}
-                          min="0"
-                          step="0.1"
-                          placeholder="الوزن"
-                          style={{ width: '80px', padding: '10px', border: '2px solid var(--border-color)', borderRadius: '6px', textAlign: 'center' }}
-                        />
+            {sections.length === 0 ? (
+              <div className="card mb-5">
+                <div className="empty-state">
+                  <ClipboardList />
+                  <p>لا توجد أقسام بعد. اضغط على "إضافة قسم جديد" للبدء</p>
+                </div>
+              </div>
+            ) : (
+              sections.map((section) => (
+                <div key={section.id} className="card mb-5" style={{ borderInlineStart: '4px solid var(--primary)' }}>
+                  <div className="card-header" style={{ flexWrap: 'wrap' }}>
+                    <div className="flex items-center gap-3" style={{ flex: 1, minWidth: '220px' }}>
+                      <div className="card-icon"><Folder /></div>
+                      <input
+                        type="text"
+                        value={section.name}
+                        onChange={(e) => updateSectionName(section.id, e.target.value)}
+                        placeholder="اسم القسم"
+                        style={{ fontSize: '16px', fontWeight: 700, background: 'var(--muted)', borderColor: 'transparent' }}
+                      />
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <label htmlFor={`sw-${section.id}`} style={{ margin: 0 }}>الوزن</label>
+                      <input
+                        id={`sw-${section.id}`}
+                        type="number"
+                        value={section.weight}
+                        onChange={(e) => updateSectionWeight(section.id, parseFloat(e.target.value) || 1)}
+                        min="0.1"
+                        step="0.1"
+                        style={{ width: '80px', textAlign: 'center' }}
+                      />
+                      <button className="icon-btn icon-btn--danger" onClick={() => removeSection(section.id)} title="حذف القسم" aria-label="حذف القسم">
+                        <Trash2 />
+                      </button>
+                    </div>
+                  </div>
+
+                  {section.questions.map((question, qIdx) => (
+                    <div key={qIdx} className="panel panel--muted mb-4">
+                      <div className="flex items-center justify-between mb-3">
+                        <span className="question-block__num">{qIdx + 1}</span>
+                        <button className="btn btn-ghost btn-sm" onClick={() => removeQuestion(section.id, qIdx)}>
+                          <Trash2 />
+                          حذف السؤال
+                        </button>
                       </div>
-                    ))}
 
-                    <div style={{
-                      display: 'flex',
-                      justifyContent: 'space-between',
-                      marginTop: '12px',
-                      paddingTop: '12px',
-                      borderTop: '1px solid var(--border-color)'
-                    }}>
-                      <div style={{ display: 'flex', gap: '8px' }}>
+                      <textarea
+                        value={question.text}
+                        onChange={(e) => updateQuestionText(section.id, qIdx, e.target.value)}
+                        placeholder="اكتب نص السؤال هنا..."
+                        style={{ minHeight: '80px', marginBottom: '12px' }}
+                      />
+
+                      {question.choices.map((choice, cIdx) => (
+                        <div key={cIdx} className="field-row mb-2">
+                          <span className="choice-chip__bullet" />
+                          <input
+                            type="text"
+                            value={choice.text}
+                            onChange={(e) => updateChoice(section.id, qIdx, cIdx, e.target.value)}
+                            placeholder={`خيار ${cIdx + 1}`}
+                          />
+                          <label style={{ margin: 0, whiteSpace: 'nowrap' }}>الوزن</label>
+                          <input
+                            type="number"
+                            value={choice.weight}
+                            onChange={(e) => updateChoiceWeight(section.id, qIdx, cIdx, parseFloat(e.target.value) || 0)}
+                            min="0"
+                            step="0.1"
+                            placeholder="الوزن"
+                            style={{ width: '80px', textAlign: 'center', flex: 'none' }}
+                          />
+                        </div>
+                      ))}
+
+                      <div className="flex gap-2 mt-3" style={{ paddingTop: '12px', borderTop: '1px solid var(--border)' }}>
                         <button className="btn btn-secondary btn-sm" onClick={() => addChoice(section.id, qIdx)}>
-                          <span>➕</span>
+                          <Plus />
                           إضافة خيار
                         </button>
                         {question.choices.length > 1 && (
-                          <button className="btn btn-danger btn-sm" onClick={() => removeChoice(section.id, qIdx)}>
-                            <span>➖</span>
+                          <button className="btn btn-secondary btn-sm" onClick={() => removeChoice(section.id, qIdx)}>
+                            <Minus />
                             إزالة آخر خيار
                           </button>
                         )}
                       </div>
-                      <button className="btn btn-danger btn-sm" onClick={() => removeQuestion(section.id, qIdx)}>
-                        <span>🗑️</span>
-                        حذف السؤال
-                      </button>
                     </div>
-                  </div>
-                ))}
-
-                <button className="btn btn-primary btn-sm" onClick={() => addQuestion(section.id)}>
-                  <span>➕</span>
-                  إضافة سؤال
-                </button>
-              </div>
-            ))
-          )}
-
-          {sections.length > 0 && (
-            <div className="card" style={{ borderTop: '4px solid var(--success-color)' }}>
-              <h3 style={{ marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <span>📊</span>
-                توزيع النقاط
-              </h3>
-              <table className="leaderboard-table">
-                <thead>
-                  <tr>
-                    <th>القسم</th>
-                    <th>الوزن</th>
-                    <th>عدد الأسئلة</th>
-                    <th>إجمالي النقاط</th>
-                    <th>النقاط لكل سؤال</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {pointsDistribution.map((data, idx) => (
-                    <tr key={idx}>
-                      <td>{data.name}</td>
-                      <td>{data.weight}</td>
-                      <td>{data.questionCount}</td>
-                      <td style={{ fontWeight: 600, color: 'var(--primary-color)' }}>{data.totalPoints}</td>
-                      <td>{data.pointsPerQuestion}</td>
-                    </tr>
                   ))}
-                  <tr style={{ background: 'var(--primary-light)', fontWeight: 600 }}>
-                    <td colSpan={3}>المجموع</td>
-                    <td style={{ color: 'var(--primary-color)' }}>{totalPoints}</td>
-                    <td>-</td>
-                  </tr>
-                </tbody>
-              </table>
-            </div>
-          )}
 
-          <div style={{
-            background: 'white',
-            borderRadius: '8px',
-            padding: '20px',
-            marginTop: '20px',
-            boxShadow: 'var(--shadow-md)',
-            display: 'flex',
-            gap: '12px',
-            justifyContent: 'center'
-          }}>
-            <button className="btn btn-success" onClick={saveQuestions}>
-              <span>💾</span>
-              حفظ الأسئلة
-            </button>
-          </div>
-        </>
-      )}
+                  <button className="btn btn-outline btn-sm btn-pill" onClick={() => addQuestion(section.id)}>
+                    <Plus />
+                    إضافة سؤال
+                  </button>
+                </div>
+              ))
+            )}
+
+            {sections.length > 0 && (
+              <div className="card mb-5">
+                <div className="card-header">
+                  <div className="card-title">
+                    <div className="card-icon"><PieChart /></div>
+                    <span>توزيع النقاط</span>
+                  </div>
+                </div>
+                <div className="table-wrap">
+                  <table className="leaderboard-table">
+                    <thead>
+                      <tr>
+                        <th>القسم</th>
+                        <th className="num">الوزن</th>
+                        <th className="num">عدد الأسئلة</th>
+                        <th className="num">إجمالي النقاط</th>
+                        <th className="num">النقاط لكل سؤال</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {pointsDistribution.map((data, idx) => (
+                        <tr key={idx}>
+                          <td>{data.name}</td>
+                          <td className="num">{data.weight}</td>
+                          <td className="num">{data.questionCount}</td>
+                          <td className="num fw-600 text-primary">{data.totalPoints}</td>
+                          <td className="num">{data.pointsPerQuestion}</td>
+                        </tr>
+                      ))}
+                      <tr style={{ background: 'var(--primary-tint)', fontWeight: 700 }}>
+                        <td colSpan={3}>المجموع</td>
+                        <td className="num text-primary">{totalPoints}</td>
+                        <td className="num">—</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+
+            <div className="card card--flat flex justify-center">
+              <button className="btn btn-primary btn-lg" onClick={saveQuestions}>
+                <Save />
+                حفظ الأسئلة
+              </button>
+            </div>
+          </>
+        )}
+      </div>
     </div>
   );
 }

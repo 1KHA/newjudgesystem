@@ -103,7 +103,7 @@ export const healthStore = {
   setStatus(status: ConnectionStatus) {
     if (state.status !== status) {
       setState({ status });
-      pushLog(`Status → ${status}`);
+      pushLog(`Status: ${status}`);
       listeners.forEach(l => l());
     }
   },

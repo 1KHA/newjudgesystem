@@ -173,12 +173,12 @@ export const getOrCreateJudge = async (judgeData: {
       .single();
     
     if (updateError) throw updateError;
-    console.log('✅ Reusing existing judge:', existing.name);
+    console.log('Reusing existing judge:', existing.name);
     return updated;
   }
   
   // Judge doesn't exist - create new
-  console.log('✅ Creating new judge:', judgeData.name);
+  console.log('Creating new judge:', judgeData.name);
   return createJudge(judgeData);
 };
 

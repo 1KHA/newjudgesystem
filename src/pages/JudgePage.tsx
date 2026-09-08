@@ -4,6 +4,7 @@ import { supabase } from '../lib/supabase';
 import { getOrCreateJudge, getJudge, submitAnswer, getLatestSession, getSession } from '../lib/supabaseService';
 import { normalizeSessionParam } from '../lib/sessionRouting';
 import type { Question } from '../types';
+import { AlertCircle, LogIn, UserRound, CheckCircle2, Clock, Check, ListChecks, Send } from 'lucide-react';
 
 // Predefined list of judge names
 const JUDGE_NAMES = [
@@ -137,7 +138,7 @@ export default function JudgePage() {
     if (currentTeam !== 'لم يتم اختيار فريق' && sessionId !== 'لم تبدأ' && isLoggedIn) {
       localStorage.setItem('currentTeam', currentTeam);
       localStorage.setItem(`currentTeam_${sessionId}`, currentTeam);
-      console.log('🔄 Auto-saved team name:', currentTeam);
+      console.log('Auto-saved team name:', currentTeam);
     }
   }, [currentTeam, sessionId, isLoggedIn]);
 
@@ -195,7 +196,7 @@ export default function JudgePage() {
           answersMap[a.question_id] = a.answer;
         });
         setSelectedAnswers(answersMap);
-        console.log('✅ Loaded previous answers:', answers.length);
+        console.log('Loaded previous answers:', answers.length);
       }
     } catch (error) {
       console.error('Error loading previous answers:', error);
@@ -220,13 +221,13 @@ export default function JudgePage() {
           // Save to both general and session-specific localStorage
           localStorage.setItem('currentTeam', teamName);
           localStorage.setItem(`currentTeam_${sessionId}`, teamName);
-          console.log('✅ Team name set and saved:', teamName);
+          console.log('Team name set and saved:', teamName);
         }
         
         // Then handle questions if they exist
         if (session.current_questions && session.current_questions.length > 0) {
           setQuestions(session.current_questions);
-          console.log('✅ Loaded current questions on rejoin:', session.current_questions.length);
+          console.log('Loaded current questions on rejoin:', session.current_questions.length);
           
           // Load previous answers for this team
           // Use parameter if provided, otherwise fall back to state
@@ -235,7 +236,7 @@ export default function JudgePage() {
             await loadPreviousAnswers(effectiveJudgeId, sessionId, teamName);
           }
         } else {
-          console.log('ℹ️ No current questions in session yet');
+          console.log('ℹ No current questions in session yet');
         }
       }
     } catch (error) {
@@ -283,12 +284,12 @@ export default function JudgePage() {
           setCurrentTeam(newTeam);
           localStorage.setItem('currentTeam', newTeam);
           localStorage.setItem(`currentTeam_${sessionId}`, newTeam);
-          console.log('✅ Team updated from broadcast:', newTeam);
+          console.log('Team updated from broadcast:', newTeam);
         } else {
           // Keep existing team - restore from localStorage if needed
           const savedTeam = localStorage.getItem(`currentTeam_${sessionId}`);
           if (savedTeam && savedTeam !== 'لم يتم اختيار فريق') {
-            console.log('⚠️ Broadcast had no team, restoring from localStorage:', savedTeam);
+            console.log('Broadcast had no team, restoring from localStorage:', savedTeam);
             setCurrentTeam(savedTeam);
           }
         }
@@ -423,7 +424,7 @@ export default function JudgePage() {
     
     // If clicking the same answer, do nothing
     if (previousAnswer === answer) {
-      console.log('ℹ️ Same answer selected, no change needed');
+      console.log('ℹ Same answer selected, no change needed');
       return;
     }
 
@@ -446,7 +447,7 @@ export default function JudgePage() {
     try {
       // If there was a previous answer, delete it first
       if (previousAnswer) {
-        console.log(`🔄 Changing answer from "${previousAnswer}" to "${answer}"`);
+        console.log(`Changing answer from "${previousAnswer}"to "${answer}"`);
         
         const { error: deleteError } = await supabase
           .from('answers')
@@ -461,7 +462,7 @@ export default function JudgePage() {
           throw deleteError;
         }
         
-        console.log('✅ Old answer deleted');
+        console.log('Old answer deleted');
       }
 
       // Submit new answer with calculated points
@@ -474,7 +475,7 @@ export default function JudgePage() {
         session_id: sessionId
       });
       
-      console.log(`✅ New answer submitted with points: ${points}`);
+      console.log(`New answer submitted with points: ${points}`);
     } catch (error) {
       console.error('Error updating answer:', error);
       // Revert local state on error
@@ -513,301 +514,122 @@ export default function JudgePage() {
     // Transition to waiting state
     setJudgeState('waiting');
     
-    console.log(`✅ Submitted ${answeredQuestions} answers (all questions), now waiting for next team`);
+    console.log(`Submitted ${answeredQuestions} answers (all questions), now waiting for next team`);
   };
+
+  const answeredCount = Object.keys(selectedAnswers).length;
+  const allAnswered = questions.length > 0 && answeredCount === questions.length;
 
   if (!isLoggedIn) {
     return (
-      <div style={{ 
-        background: 'linear-gradient(135deg, #761814 0%, #5a120f 100%)',
-        minHeight: '100vh',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        padding: '20px'
-      }}>
-        <div style={{ width: '100%', maxWidth: '800px' }}>
-          <div style={{
-            background: 'white',
-            borderRadius: '16px',
-            padding: '40px',
-            boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.1)',
-            textAlign: 'center',
-            animation: 'slideUp 0.5s ease-out'
-          }}>
-            <h1 style={{
-              color: 'var(--primary-color)',
-              fontSize: '32px',
-              marginBottom: '8px',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              gap: '12px'
-            }}>
-              <span>⚖️</span>
-              الانضمام للتحكيم
-            </h1>
-            <p style={{
-              color: 'var(--text-secondary)',
-              marginBottom: '32px',
-              fontSize: '16px'
-            }}>
-              أدخل اسمك للانضمام إلى جلسة التحكيم
-            </p>
-            
-            <div style={{
-              background: 'var(--primary-light)',
-              color: 'var(--primary-color)',
-              padding: '12px 20px',
-              borderRadius: '12px',
-              marginBottom: '24px',
-              fontWeight: 600,
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: '8px'
-            }}>
-              <span>معرف الجلسة:</span>
-              <span>{sessionId}</span>
-            </div>
+      <div className="auth-page">
+        <div className="auth-card">
+          <img src="/brand/logo.png" alt="مياهثون" className="auth-card__logo" />
+          <h1 className="auth-card__title">الانضمام للتحكيم</h1>
+          <p className="auth-card__subtitle">أدخل اسمك للانضمام إلى جلسة التحكيم</p>
 
-            {(invalidLink || sessionId === 'رابط غير صالح') && (
-              <div style={{
-                background: '#fef2f2',
-                border: '1px solid #ef4444',
-                color: '#ef4444',
-                padding: '10px 12px',
-                borderRadius: '8px',
-                marginBottom: '16px',
-                fontSize: '14px',
-                fontWeight: 600
-              }}>
-                ⚠️ رابط الجلسة غير صالح أو الجلسة منتهية — تحقق من الرابط مع المضيف
-              </div>
-            )}
-
-            <div style={{ marginBottom: '20px', textAlign: 'right' }}>
-              <label style={{
-                display: 'block',
-                marginBottom: '8px',
-                fontWeight: 500,
-                color: 'var(--text-secondary)',
-                fontSize: '14px'
-              }}>
-                اختر اسمك
-              </label>
-              <select
-                value={judgeName}
-                onChange={(e) => setJudgeName(e.target.value)}
-                style={{
-                  width: '100%',
-                  padding: '12px 16px',
-                  border: '2px solid var(--border-color)',
-                  borderRadius: '8px',
-                  fontSize: '16px',
-                  background: 'white',
-                  cursor: 'pointer',
-                  color: judgeName ? 'var(--text-primary)' : 'var(--text-secondary)'
-                }}
-              >
-                <option value="" disabled>-- اختر اسمك من القائمة --</option>
-                {JUDGE_NAMES.map(name => (
-                  <option key={name} value={name}>{name}</option>
-                ))}
-              </select>
-            </div>
-
-            <button className="btn btn-primary" onClick={handleJoinGame} style={{ width: '100%' }}>
-              <span>🚀</span>
-              انضمام للجلسة
-            </button>
+          <div className="text-center mb-5">
+            <span className="session-badge">
+              <span>معرف الجلسة</span>
+              <span className="session-badge__code">{sessionId}</span>
+            </span>
           </div>
+
+          {(invalidLink || sessionId === 'رابط غير صالح') && (
+            <div className="alert alert-danger" role="alert">
+              <AlertCircle />
+              <span>رابط الجلسة غير صالح أو الجلسة منتهية. تحقق من الرابط مع المضيف.</span>
+            </div>
+          )}
+
+          <div className="field">
+            <label htmlFor="judgeName">اختر اسمك</label>
+            <select
+              id="judgeName"
+              value={judgeName}
+              onChange={(e) => setJudgeName(e.target.value)}
+              style={{ padding: '12px 14px', fontSize: '16px', color: judgeName ? 'var(--text-primary)' : 'var(--text-muted)' }}
+            >
+              <option value="" disabled>اختر اسمك من القائمة</option>
+              {JUDGE_NAMES.map(name => (
+                <option key={name} value={name}>{name}</option>
+              ))}
+            </select>
+          </div>
+
+          <button className="btn btn-primary btn-lg btn-block" onClick={handleJoinGame}>
+            <LogIn />
+            انضمام للجلسة
+          </button>
         </div>
       </div>
     );
   }
 
   return (
-    <div style={{ 
-      background: 'linear-gradient(135deg, #761814 0%, #5a120f 100%)',
-      minHeight: '100vh',
-      padding: '20px'
-    }}>
-      <div style={{ width: '100%', maxWidth: '800px', margin: '0 auto' }}>
-        <div style={{
-          background: 'white',
-          borderRadius: '16px',
-          padding: '32px',
-          boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.1)',
-          animation: 'slideUp 0.5s ease-out'
-        }}>
-          <div style={{
-            background: 'linear-gradient(135deg, var(--primary-color), var(--primary-hover))',
-            color: 'white',
-            padding: '20px',
-            borderRadius: '12px',
-            marginBottom: '24px',
-            textAlign: 'center'
-          }}>
-            <h2 style={{ fontSize: '20px', marginBottom: '4px' }}>يتم تحكيم</h2>
-            <div style={{ fontSize: '28px', fontWeight: 700 }}>{currentTeam}</div>
+    <div className="judge-page">
+      <div className="judge-page__inner">
+        <div className="judge-page__topbar">
+          <img src="/brand/logo2.png" alt="مياهثون" />
+          <span className="judge-page__judge">
+            <UserRound />
+            {judgeName}
+          </span>
+        </div>
+
+        <div className="judge-card">
+          <div className="judge-team-banner">
+            <h2>يتم تحكيم</h2>
+            <div className="team-name">{currentTeam}</div>
           </div>
 
           <div id="questions-container">
             {judgeState === 'waiting' ? (
               // Waiting Screen
-              <div style={{
-                textAlign: 'center',
-                padding: '60px 20px',
-                animation: 'fadeIn 0.5s ease-out'
-              }}>
-                <div style={{
-                  background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
-                  color: 'white',
-                  padding: '24px',
-                  borderRadius: '16px',
-                  marginBottom: '32px',
-                  boxShadow: '0 10px 15px -3px rgba(16, 185, 129, 0.3)'
-                }}>
-                  <div style={{ fontSize: '64px', marginBottom: '16px' }}>✅</div>
-                  <h2 style={{ fontSize: '24px', fontWeight: 700, marginBottom: '8px' }}>
-                    تم إرسال إجاباتك بنجاح!
-                  </h2>
-                  <p style={{ fontSize: '16px', opacity: 0.9 }}>
-                    شكراً لك على مشاركتك في التحكيم
-                  </p>
+              <div className="judge-waiting">
+                <div className="judge-waiting__done">
+                  <CheckCircle2 />
+                  <h2>تم إرسال إجاباتك بنجاح</h2>
+                  <p>شكراً لك على مشاركتك في التحكيم</p>
                 </div>
 
-                <div style={{
-                  background: 'var(--secondary-light)',
-                  padding: '32px',
-                  borderRadius: '12px'
-                }}>
-                  <div style={{
-                    width: '80px',
-                    height: '80px',
-                    border: '6px solid var(--primary-color)',
-                    borderTop: '6px solid transparent',
-                    borderRadius: '50%',
-                    margin: '0 auto 24px',
-                    animation: 'spin 1s linear infinite'
-                  }} />
-                  <h3 style={{
-                    fontSize: '20px',
-                    fontWeight: 600,
-                    color: 'var(--text-primary)',
-                    marginBottom: '12px'
-                  }}>
-                    ⏳ في انتظار الفريق التالي...
-                  </h3>
-                  <p style={{
-                    fontSize: '14px',
-                    color: 'var(--text-secondary)'
-                  }}>
-                    سيتم عرض الأسئلة الجديدة تلقائياً عندما يرسلها المضيف
-                  </p>
+                <div className="judge-waiting__next">
+                  <div className="spinner spinner--lg" style={{ margin: '0 auto' }} />
+                  <h3>في انتظار الفريق التالي...</h3>
+                  <p>سيتم عرض الأسئلة الجديدة تلقائياً عندما يرسلها المضيف</p>
                 </div>
-
-                <style>{`
-                  @keyframes spin {
-                    0% { transform: rotate(0deg); }
-                    100% { transform: rotate(360deg); }
-                  }
-                  @keyframes fadeIn {
-                    from { opacity: 0; transform: translateY(20px); }
-                    to { opacity: 1; transform: translateY(0); }
-                  }
-                `}</style>
               </div>
             ) : questions.length === 0 ? (
-              <div className="empty-state">في انتظار الأسئلة...</div>
+              <div className="empty-state">
+                <Clock />
+                <h3>في انتظار الأسئلة...</h3>
+                <p>ستظهر الأسئلة هنا فور إرسالها من المضيف</p>
+              </div>
             ) : (
               questions.map((question, index) => (
-                <div key={question.id} style={{
-                  background: 'var(--secondary-light)',
-                  borderRadius: '12px',
-                  padding: '24px',
-                  marginBottom: '20px',
-                  borderRight: '4px solid var(--primary-color)'
-                }}>
-                  <div style={{
-                    display: 'inline-block',
-                    background: 'var(--primary-color)',
-                    color: 'white',
-                    padding: '4px 12px',
-                    borderRadius: '20px',
-                    fontSize: '14px',
-                    fontWeight: 600,
-                    marginBottom: '12px'
-                  }}>
-                    السؤال {index + 1}
-                  </div>
-                  
-                  <div style={{
-                    fontSize: '18px',
-                    color: 'var(--text-primary)',
-                    marginBottom: '20px',
-                    fontWeight: 500
-                  }}>
-                    {question.text}
-                  </div>
+                <div key={question.id} className="question-block">
+                  <span className="question-block__num">السؤال {index + 1}</span>
+                  <div className="question-block__text">{question.text}</div>
 
-                  <div style={{
-                    display: 'grid',
-                    gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
-                    gap: '12px'
-                  }}>
+                  <div className="choice-grid">
                     {question.choices.map((choice, choiceIdx) => {
                       const choiceText = typeof choice === 'string' ? choice : choice.text;
                       const choiceWeight = typeof choice === 'string' ? 1 : choice.weight;
                       const isSelected = selectedAnswers[question.id] === choiceText;
-                      
+
                       return (
                         <button
                           key={choiceIdx}
                           className={`answer-btn ${isSelected ? 'selected' : ''}`}
                           onClick={() => handleAnswerSelect(question.id, choiceText)}
-                          style={{
-                            padding: '14px 20px',
-                            background: isSelected ? 'var(--primary-color)' : 'white',
-                            color: isSelected ? 'white' : 'var(--text-primary)',
-                            border: `2px solid ${isSelected ? 'var(--primary-color)' : 'var(--border-color)'}`,
-                            borderRadius: '8px',
-                            cursor: 'pointer',
-                            fontSize: '16px',
-                            fontWeight: 500,
-                            textAlign: 'center',
-                            position: 'relative',
-                            transition: 'all 0.2s',
-                            opacity: isSelected ? 1 : 0.9
-                          }}
+                          aria-pressed={isSelected}
                         >
                           <div>{choiceText}</div>
                           {typeof choice !== 'string' && (
-                            <div style={{
-                              fontSize: '11px',
-                              marginTop: '4px',
-                              opacity: 0.8
-                            }}>
-                              وزن: {choiceWeight}
-                            </div>
+                            <div className="answer-btn__weight">وزن: {choiceWeight}</div>
                           )}
                           {isSelected && (
-                            <span style={{
-                              position: 'absolute',
-                              top: '8px',
-                              left: '8px',
-                              background: 'white',
-                              color: 'var(--primary-color)',
-                              width: '24px',
-                              height: '24px',
-                              borderRadius: '50%',
-                              display: 'flex',
-                              alignItems: 'center',
-                              justifyContent: 'center',
-                              fontWeight: 'bold'
-                            }}>
-                              ✓
-                            </span>
+                            <span className="answer-btn__check"><Check /></span>
                           )}
                         </button>
                       );
@@ -821,61 +643,24 @@ export default function JudgePage() {
           {questions.length > 0 && judgeState === 'judging' && (
             <>
               {/* Progress Indicator */}
-              <div style={{
-                marginTop: '24px',
-                padding: '16px',
-                background: Object.keys(selectedAnswers).length === questions.length 
-                  ? 'linear-gradient(135deg, #10b981 0%, #059669 100%)'
-                  : 'var(--secondary-light)',
-                borderRadius: '12px',
-                textAlign: 'center'
-              }}>
-                <div style={{
-                  fontSize: '14px',
-                  fontWeight: 600,
-                  color: Object.keys(selectedAnswers).length === questions.length 
-                    ? 'white'
-                    : 'var(--text-secondary)',
-                  marginBottom: '8px'
-                }}>
-                  {Object.keys(selectedAnswers).length === questions.length 
-                    ? '✅ تم الإجابة على جميع الأسئلة'
-                    : `تم الإجابة على ${Object.keys(selectedAnswers).length} من ${questions.length} أسئلة`
-                  }
+              <div className={`judge-progress ${allAnswered ? 'judge-progress--done' : ''}`}>
+                <div className="judge-progress__label">
+                  {allAnswered ? <CheckCircle2 /> : <ListChecks />}
+                  {allAnswered
+                    ? 'تم الإجابة على جميع الأسئلة'
+                    : `تم الإجابة على ${answeredCount} من ${questions.length} أسئلة`}
                 </div>
-                <div style={{
-                  width: '100%',
-                  height: '8px',
-                  background: 'rgba(0,0,0,0.1)',
-                  borderRadius: '4px',
-                  overflow: 'hidden'
-                }}>
-                  <div style={{
-                    width: `${(Object.keys(selectedAnswers).length / questions.length) * 100}%`,
-                    height: '100%',
-                    background: Object.keys(selectedAnswers).length === questions.length 
-                      ? 'white'
-                      : 'var(--primary-color)',
-                    transition: 'width 0.3s ease'
-                  }} />
+                <div className="progress">
+                  <div className="progress__bar" style={{ width: `${(answeredCount / questions.length) * 100}%` }} />
                 </div>
               </div>
 
               <button
-                className="btn btn-success"
+                className="btn btn-primary btn-lg btn-block mt-4"
                 onClick={handleSubmitFinal}
-                style={{
-                  marginTop: '16px',
-                  background: 'linear-gradient(135deg, var(--success-color), #059669)',
-                  fontSize: '18px',
-                  padding: '16px 40px',
-                  boxShadow: 'var(--shadow-lg)',
-                  width: '100%',
-                  opacity: Object.keys(selectedAnswers).length === questions.length ? 1 : 0.7,
-                  cursor: Object.keys(selectedAnswers).length === questions.length ? 'pointer' : 'not-allowed'
-                }}
+                style={{ opacity: allAnswered ? 1 : 0.7 }}
               >
-                <span>📤</span>
+                <Send />
                 إرسال الإجابات النهائية
               </button>
             </>

@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react';
 import { Navigate } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
+import LoadingScreen from './LoadingScreen';
 
 /**
  * Route guard for admin-only pages.
@@ -11,14 +12,7 @@ export default function RequireAuth({ children }: { children: ReactNode }) {
   const { user, loading } = useAuth();
 
   if (loading) {
-    return (
-      <div className="container">
-        <div className="card" style={{ marginTop: '80px', textAlign: 'center', padding: '40px' }}>
-          <div style={{ fontSize: '32px', marginBottom: '12px' }}>⏳</div>
-          <div>جاري التحميل...</div>
-        </div>
-      </div>
-    );
+    return <LoadingScreen message="جاري التحميل..." />;
   }
 
   if (!user) {
