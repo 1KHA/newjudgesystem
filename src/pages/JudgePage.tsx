@@ -6,18 +6,6 @@ import { normalizeSessionParam } from '../lib/sessionRouting';
 import type { Question } from '../types';
 import { AlertCircle, LogIn, UserRound, CheckCircle2, Clock, Check, ListChecks, Send } from 'lucide-react';
 
-// Predefined list of judge names
-const JUDGE_NAMES = [
-  'م. أحمد',
-  'أ. مشعل',
-  'أ. همام',
-  'أ. سدير',
-  'أ. حنين',
-  'أ.د. نورة',
-  'د. فريدة',
-  'د. علي',
-  'د. هشام'
-];
 
 export default function JudgePage() {
   // Unique session link support: /judge/:sessionId locks this device to that session
@@ -338,7 +326,8 @@ export default function JudgePage() {
   };
 
   const handleJoinGame = async () => {
-    if (!judgeName.trim()) {
+    const name = judgeName.trim();
+    if (!name) {
       alert('يرجى إدخال اسمك');
       return;
     }
@@ -362,12 +351,12 @@ export default function JudgePage() {
       const newJudgeToken = crypto.randomUUID();
       
       console.log('Creating judge with:', {
-        name: judgeName,
+        name,
         session_id: latestSession.session_id
       });
       
       const judge = await getOrCreateJudge({
-        name: judgeName,
+        name,
         judge_token: newJudgeToken,
         session_id: latestSession.session_id
       });
@@ -375,16 +364,17 @@ export default function JudgePage() {
       console.log('Judge joined successfully:', judge);
 
       setJudgeId(judge.id);
+      setJudgeName(name);
       setSessionId(latestSession.session_id);
       setIsLoggedIn(true);
 
       localStorage.setItem('judgeSessionId', latestSession.session_id);
-      localStorage.setItem('judgeName', judgeName);
+      localStorage.setItem('judgeName', name);
       localStorage.setItem('judgeToken', newJudgeToken);
 
       // Show success message
       setTimeout(() => {
-        alert(`مرحباً ${judgeName}! تم الانضمام بنجاح للجلسة: ${latestSession.session_id}`);
+        alert(`مرحباً ${name}! تم الانضمام بنجاح للجلسة: ${latestSession.session_id}`);
       }, 100);
     } catch (error) {
       console.error('Error joining game:', error);
@@ -543,18 +533,18 @@ export default function JudgePage() {
           )}
 
           <div className="field">
-            <label htmlFor="judgeName">اختر اسمك</label>
-            <select
+            <label htmlFor="judgeName">اسمك</label>
+            <input
               id="judgeName"
+              type="text"
               value={judgeName}
               onChange={(e) => setJudgeName(e.target.value)}
-              style={{ padding: '12px 14px', fontSize: '16px', color: judgeName ? 'var(--text-primary)' : 'var(--text-muted)' }}
-            >
-              <option value="" disabled>اختر اسمك من القائمة</option>
-              {JUDGE_NAMES.map(name => (
-                <option key={name} value={name}>{name}</option>
-              ))}
-            </select>
+              onKeyDown={(e) => e.key === 'Enter' && handleJoinGame()}
+              placeholder="أدخل اسمك"
+              autoComplete="name"
+              maxLength={60}
+              style={{ padding: '12px 14px', fontSize: '16px' }}
+            />
           </div>
 
           <button className="btn btn-primary btn-lg btn-block" onClick={handleJoinGame}>
