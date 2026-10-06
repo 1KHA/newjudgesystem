@@ -19,7 +19,7 @@
 
 import { createClient } from '@supabase/supabase-js';
 import pg from 'pg';
-import { writeFileSync, mkdirSync } from 'node:fs';
+import { writeFileSync, mkdirSync, readFileSync, existsSync, unlinkSync } from 'node:fs';
 import { setTimeout as sleep } from 'node:timers/promises';
 
 try { process.loadEnvFile('.env.local'); } catch { /* env may already be exported */ }
@@ -206,8 +206,14 @@ class Host {
   }
   async goToTeam(index, team) {
     this.team = team;
-    const { error } = await this.sb.from('sessions').update({ current_team_index: index, current_team_id: team, updated_at: new Date().toISOString() }).eq('session_id', SESSION_ID);
-    if (error) { recordError('host:setCurrentTeam', error); return { sentAt: Date.now(), broadcastOk: false }; }
+    let error = null;
+    for (let attempt = 0; attempt < 20; attempt++) {
+      ({ error } = await this.sb.from('sessions').update({ current_team_index: index, current_team_id: team, updated_at: new Date().toISOString() }).eq('session_id', SESSION_ID));
+      if (!error) break;
+      recordError('host:setCurrentTeam', error);
+      await sleep(3000);
+    }
+    if (error) return { sentAt: Date.now(), broadcastOk: false };
     const sentAt = Date.now();
     const ok = await this.ch.broadcast(`session-${SESSION_ID}`, 'team-change', { currentTeam: team, status: 'active', sentAt }).catch(() => false);
     return { sentAt, broadcastOk: ok };
@@ -238,6 +244,7 @@ class Judge {
       const { data: ex } = await this.sb.from('judges').select('*').eq('name', this.name).eq('session_id', SESSION_ID).maybeSingle();
       if (ex) { const { data } = await this.sb.from('judges').update({ judge_token: this.token, last_seen_at: new Date().toISOString() }).eq('id', ex.id).select().single(); this.id = data.id; }
       else { const { data, error } = await this.sb.from('judges').insert({ name: this.name, judge_token: this.token, session_id: SESSION_ID, last_seen_at: new Date().toISOString() }).select().single(); if (error) throw error; this.id = data.id; }
+      this.loadQueue();
       return true;
     } catch (e) { recordError('judge:join', e); return false; }
   }
@@ -317,6 +324,13 @@ class Judge {
     this.abort = false;
     if (this.team && !(this.doneTeam === this.team)) { M.scenarios.reloadResumed++; this.answerAll().catch((e) => recordError('judge:resume', e)); }
   }
+  get queueFile() { return `${OUT_DIR}/queue-judge-${this.n}.json`; }
+  saveQueue() {
+    try { if (this.queue.length) writeFileSync(this.queueFile, JSON.stringify(this.queue)); else if (existsSync(this.queueFile)) unlinkSync(this.queueFile); } catch { /* disk */ }
+  }
+  loadQueue() {
+    try { if (existsSync(this.queueFile)) this.queue = JSON.parse(readFileSync(this.queueFile, 'utf8')); } catch { /* ignore */ }
+  }
   enqueue(q, text) {
     const team = this.team;
     if (!this.answered.has(team)) this.answered.set(team, new Set());
@@ -324,6 +338,7 @@ class Judge {
     const key = `${team}|${q.id}`;
     this.queue = this.queue.filter((i) => i.key !== key);
     this.queue.push({ key, session_id: SESSION_ID, team_id: team, judge_id: this.id, question_id: q.id, answer: text, points: this.points(q, text), attempts: 0 });
+    this.saveQueue();
   }
   async flush() {
     if (this.flushing || this.offline || !this.queue.length) return;
@@ -339,6 +354,7 @@ class Judge {
         M.answersWritten++;
         if (it.queuedOffline) M.answersReplayed++;
         this.queue.shift();
+        this.saveQueue();
       }
     } finally { this.flushing = false; }
   }
@@ -553,12 +569,20 @@ async function main() {
     }
   }
 
-  log('All rounds complete: finishing session...');
-  for (const j of judges) await j.flush();
-  await host.finish();
+  log('All rounds complete: draining queues and finishing session (retries for up to 30 min if the network is down)...');
+  const untilOk = async (label, fn) => {
+    for (let attempt = 1; attempt <= 60; attempt++) {
+      try { if (await fn()) return true; } catch (e) { recordError(`end:${label}`, e); }
+      if (attempt % 6 === 0) log(`  ${label}: still retrying (attempt ${attempt})`);
+      await sleep(30_000);
+    }
+    return false;
+  };
+  await untilOk('drain-queues', async () => { for (const j of judges) await j.flush(); return judges.every((j) => j.queue.length === 0); });
+  await untilOk('finish-session', async () => (await host.finish()) !== null);
   await sleep(2000);
 
-  M.integrity = await integrityCheck(judges.length * CFG.teams * CFG.questionsPerTeam);
+  await untilOk('integrity-check', async () => { M.integrity = await integrityCheck(judges.length * CFG.teams * CFG.questionsPerTeam); return !M.integrity.checks.some((c) => c.name === 'integrity check ran'); });
   clearInterval(reportTimer);
   host.stop();
   judges.forEach((j) => j.disconnect());

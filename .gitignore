@@ -52,3 +52,4 @@ src/types/database.types.ts
 stress/results/
 stress/backups/
 stress/*.log
+visual_identity_dar
