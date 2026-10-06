@@ -1,6 +1,6 @@
 /* ==========================================================================
-   مياهثون — نظام التحكيم
-   Global stylesheet built from visual_identity/VISUAL_IDENTITY.md
+   هاكثون الابتكار — جائزة مايدة محي الدين ناظر للابتكار — نظام التحكيم
+   Global stylesheet built from visual_identity_dar (maroon / gold / sky / cream)
    ========================================================================== */
 
 /* ---- Typography: PingAR LT (self-hosted) ---- */
@@ -23,30 +23,35 @@
 /* ---- Design tokens ---- */
 :root {
   /* Brand core */
-  --primary: #2F44DC;
-  --primary-hover: #53AEF5;
-  --primary-dark: #2436B8;
-  --primary-light: #E9ECFB;
-  --primary-tint: #F3F5FE;
-  --accent: #53AEF5;
-  --accent-light: #E6F3FE;
-  --navy: #183063;
+  --primary: #80191A;
+  --primary-hover: #9B2526;
+  --primary-dark: #5E1112;
+  --primary-light: #FCE8CA;
+  --primary-tint: #FDF5EA;
+  --gold: #F9D69F;
+  --gold-light: #FDEFD9;
+  --sky: #83BAE4;
+  --sky-light: #E8F2FA;
+  --cream: #FFF6EB;
+  --accent: var(--gold);
+  --accent-light: var(--gold-light);
+  --ink: #3B1516;
   --white: #FFFFFF;
 
   /* Secondary */
-  --gray: #525661;
+  --gray: #6B5B57;
   --amber: #FCD34D;
 
   /* Text */
-  --text-primary: var(--navy);
+  --text-primary: var(--ink);
   --text-secondary: var(--gray);
-  --text-muted: #8A8F9C;
+  --text-muted: #9A8A84;
 
   /* Surfaces & lines */
-  --background: #FFFFFF;
-  --card: #FAFAFA;
-  --muted: #F1F2F4;
-  --border: #D6D8DD;
+  --background: var(--cream);
+  --card: #FFFFFF;
+  --muted: #F6EDE2;
+  --border: #E6D7C5;
   --border-color: var(--border);
   --secondary-light: var(--muted);
 
@@ -60,8 +65,8 @@
   --warning: #F59E0B;
   --warning-bg: #FEF3C7;
   --warning-text: #92400E;
-  --info-bg: #DBEAFE;
-  --info-text: #1E40AF;
+  --info-bg: var(--sky-light);
+  --info-text: #1F4E79;
 
   /* Legacy aliases used by older inline styles */
   --primary-color: var(--primary);
@@ -71,10 +76,10 @@
   --warning-color: var(--warning);
 
   /* Elevation & shape */
-  --shadow-sm: 0 1px 2px 0 rgba(24, 48, 99, 0.06);
-  --shadow-md: 0 4px 10px -2px rgba(24, 48, 99, 0.10);
-  --shadow-lg: 0 12px 24px -6px rgba(24, 48, 99, 0.16);
-  --shadow-glow: 0 0 10px 3px rgba(252, 211, 77, 0.85);
+  --shadow-sm: 0 1px 2px 0 rgba(59, 21, 22, 0.06);
+  --shadow-md: 0 4px 10px -2px rgba(59, 21, 22, 0.10);
+  --shadow-lg: 0 12px 24px -6px rgba(59, 21, 22, 0.20);
+  --shadow-glow: 0 0 10px 3px rgba(249, 214, 159, 0.85);
   --radius: 0.75rem;
   --radius-sm: 0.5rem;
   --radius-full: 9999px;
@@ -156,7 +161,7 @@ img {
   padding: 24px 20px 48px;
 }
 
-/* ---- Brand header (solid brand blue, white content) ---- */
+/* ---- Brand header (solid brand maroon, white + gold content) ---- */
 .brand-header {
   background: var(--primary);
   color: var(--white);
@@ -164,7 +169,7 @@ img {
   position: sticky;
   top: 0;
   z-index: 50;
-  box-shadow: 0 2px 8px rgba(24, 48, 99, 0.18);
+  box-shadow: 0 2px 8px rgba(59, 21, 22, 0.25);
 }
 
 .brand-header__inner {
@@ -190,10 +195,41 @@ img {
   color: var(--white);
 }
 
-.brand-header__logo {
-  height: 28px;
+/* Compact lockup: gold bulb mark + two-line wordmark */
+.brand-lockup {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  color: var(--white);
+}
+
+.brand-lockup__mark {
+  height: 40px;
   width: auto;
   flex-shrink: 0;
+}
+
+.brand-lockup__text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  line-height: 1.25;
+}
+
+.brand-lockup__name {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--white);
+  white-space: nowrap;
+}
+
+.brand-lockup__award {
+  font-size: 11px;
+  color: var(--gold);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .brand-header__divider {
@@ -229,7 +265,7 @@ img {
   padding: 0 4px;
 }
 
-/* Buttons that sit on the blue header */
+/* Buttons that sit on the maroon header */
 .btn-on-blue {
   background: rgba(255, 255, 255, 0.12);
   color: var(--white);
@@ -857,7 +893,7 @@ textarea {
   background: var(--primary);
   border-color: var(--primary);
   color: var(--white);
-  box-shadow: 0 4px 10px rgba(47, 68, 220, 0.25);
+  box-shadow: 0 4px 10px rgba(128, 25, 26, 0.25);
 }
 
 .team-tile__row {
@@ -1171,8 +1207,8 @@ textarea {
 }
 
 .rank-badge--1 { background: var(--primary); color: var(--white); }
-.rank-badge--2 { background: var(--accent);  color: var(--white); }
-.rank-badge--3 { background: var(--navy);    color: var(--white); }
+.rank-badge--2 { background: var(--gold);    color: var(--ink); }
+.rank-badge--3 { background: var(--sky);     color: var(--ink); }
 
 /* ---- Stat cards ---- */
 .stat-grid {
@@ -1189,10 +1225,10 @@ textarea {
   text-align: center;
 }
 
-.stat-card--blue  { background: linear-gradient(135deg, #FFFFFF, #EFF6FF); }
+.stat-card--blue  { background: linear-gradient(135deg, #FFFFFF, var(--sky-light)); }
 .stat-card--green { background: linear-gradient(135deg, #FFFFFF, #F0FDF4); }
 .stat-card--cyan  { background: linear-gradient(135deg, #FFFFFF, #ECFEFF); }
-.stat-card--yellow{ background: linear-gradient(135deg, #FFFFFF, #FEFCE8); }
+.stat-card--yellow{ background: linear-gradient(135deg, #FFFFFF, var(--gold-light)); }
 
 .stat-value {
   font-size: 26px;
@@ -1211,7 +1247,7 @@ textarea {
 .progress {
   width: 100%;
   height: 8px;
-  background: rgba(24, 48, 99, 0.1);
+  background: rgba(128, 25, 26, 0.1);
   border-radius: 4px;
   overflow: hidden;
 }
@@ -1265,7 +1301,7 @@ textarea {
 .alert-danger  { background: var(--danger-bg);  color: var(--danger-text);  border-color: #FCA5A5; }
 .alert-warning { background: var(--warning-bg); color: var(--warning-text); border-color: #FCD34D; }
 .alert-success { background: var(--success-bg); color: var(--success-text); border-color: #86EFAC; }
-.alert-info    { background: var(--primary-tint); color: var(--primary);    border-color: var(--primary-light); }
+.alert-info    { background: var(--info-bg);   color: var(--info-text);   border-color: #B9D6EE; }
 
 /* ---- Empty & loading states ---- */
 .empty-state {
@@ -1323,11 +1359,13 @@ textarea {
   min-height: 100vh;
   display: flex;
   align-items: center;
+  flex-direction: column;
   justify-content: center;
+  gap: 24px;
   padding: 24px;
   background:
-    radial-gradient(circle at 15% 20%, rgba(83, 174, 245, 0.35), transparent 45%),
-    radial-gradient(circle at 85% 80%, rgba(24, 48, 99, 0.35), transparent 50%),
+    radial-gradient(circle at 85% 10%, rgba(249, 214, 159, 0.16), transparent 45%),
+    radial-gradient(circle at 15% 90%, rgba(59, 21, 22, 0.45), transparent 50%),
     var(--primary);
 }
 
@@ -1345,10 +1383,11 @@ textarea {
   max-width: 800px;
 }
 
-.auth-card__logo {
-  height: 56px;
-  width: auto;
-  margin: 0 auto 20px;
+.auth-page__logo {
+  width: min(260px, 70vw);
+  height: auto;
+  flex-shrink: 0;
+  margin-bottom: clamp(16px, 5vh, 48px);
 }
 
 .auth-card__title {
@@ -1368,8 +1407,8 @@ textarea {
   min-height: 100vh;
   padding: 24px 16px 48px;
   background:
-    radial-gradient(circle at 15% 0%, rgba(83, 174, 245, 0.35), transparent 45%),
-    radial-gradient(circle at 90% 100%, rgba(24, 48, 99, 0.35), transparent 50%),
+    radial-gradient(circle at 85% 0%, rgba(249, 214, 159, 0.16), transparent 45%),
+    radial-gradient(circle at 10% 100%, rgba(59, 21, 22, 0.45), transparent 50%),
     var(--primary);
 }
 
@@ -1388,10 +1427,6 @@ textarea {
   color: var(--white);
 }
 
-.judge-page__topbar img {
-  height: 28px;
-  width: auto;
-}
 
 .judge-page__judge {
   display: inline-flex;
@@ -1419,7 +1454,7 @@ textarea {
 }
 
 .judge-team-banner {
-  background: var(--navy);
+  background: var(--ink);
   color: var(--white);
   padding: 20px;
   border-radius: var(--radius);
@@ -1528,7 +1563,7 @@ textarea {
   font-weight: 700;
   letter-spacing: 3px;
   direction: ltr;
-  color: var(--navy);
+  color: var(--ink);
   display: block;
   text-align: center;
 }
@@ -1580,7 +1615,7 @@ textarea {
 }
 
 .top-teams {
-  background: var(--navy);
+  background: var(--ink);
   color: var(--white);
   padding: 20px;
   border-radius: var(--radius);
@@ -1599,7 +1634,7 @@ textarea {
 .top-teams h3 svg {
   width: 20px;
   height: 20px;
-  color: var(--amber);
+  color: var(--gold);
 }
 
 .top-team {
@@ -1622,8 +1657,8 @@ textarea {
 }
 
 .top-team--1 .top-team__bar { background: var(--primary); }
-.top-team--2 .top-team__bar { background: var(--accent); }
-.top-team--3 .top-team__bar { background: var(--navy); }
+.top-team--2 .top-team__bar { background: var(--gold); }
+.top-team--3 .top-team__bar { background: var(--sky); }
 
 .top-team .rank-badge {
   margin: 4px auto 10px;
@@ -1776,7 +1811,7 @@ textarea {
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #B9BCC4;
+  background: #D9C6B1;
   border-radius: 4px;
 }
 
@@ -1835,6 +1870,14 @@ textarea {
 
   .brand-header__user {
     display: none;
+  }
+
+  .brand-lockup__award {
+    display: none;
+  }
+
+  .brand-lockup__mark {
+    height: 34px;
   }
 
   .page-head h1 {

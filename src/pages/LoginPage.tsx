@@ -2,6 +2,7 @@ import { useState, type FormEvent } from 'react';
 import { useNavigate, Navigate } from 'react-router-dom';
 import { AlertCircle, LogIn, Loader2 } from 'lucide-react';
 import { useAuth } from '../hooks/useAuth';
+import { BrandLogo } from '../components/BrandLockup';
 
 export default function LoginPage() {
   const { user, loading, signIn } = useAuth();
@@ -37,8 +38,8 @@ export default function LoginPage() {
 
   return (
     <div className="auth-page">
+      <BrandLogo className="auth-page__logo" />
       <div className="auth-card">
-        <img src="/brand/logo.png" alt="مياهثون" className="auth-card__logo" />
         <h1 className="auth-card__title">تسجيل دخول المشرف</h1>
         <p className="auth-card__subtitle">نظام التحكيم — دخول المشرفين فقط</p>
 

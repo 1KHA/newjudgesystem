@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react';
 import { Link } from 'react-router-dom';
+import BrandLockup, { BRAND_NAME } from './BrandLockup';
 
 interface BrandHeaderProps {
   /** Page title shown next to the logo (hidden on small screens). */
@@ -9,15 +10,15 @@ interface BrandHeaderProps {
 }
 
 /**
- * Solid brand-blue top bar with the white مياهثون lockup.
+ * Solid brand-maroon top bar with the هاكثون الابتكار lockup.
  * Used on every admin page so the identity is consistent across the app.
  */
 export default function BrandHeader({ title, children }: BrandHeaderProps) {
   return (
     <header className="brand-header">
       <div className="brand-header__inner">
-        <Link to="/host" className="brand-header__brand" aria-label="مياهثون — الصفحة الرئيسية">
-          <img src="/brand/logo2.png" alt="مياهثون" className="brand-header__logo" />
+        <Link to="/host" className="brand-header__brand" aria-label={`${BRAND_NAME} — الصفحة الرئيسية`}>
+          <BrandLockup />
           {title && (
             <>
               <span className="brand-header__divider" aria-hidden="true" />

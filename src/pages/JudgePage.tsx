@@ -14,6 +14,7 @@ import { OfflineAnswerQueue, browserStorage } from '../lib/offlineQueue';
 import { RealtimeManager } from '../lib/realtimeManager';
 import { healthStore } from '../lib/connectionHealth';
 import { useConnectionHealth } from '../hooks/useConnectionHealth';
+import BrandLockup, { BrandLogo } from '../components/BrandLockup';
 import type { Question, SessionDetail, Session, PendingAnswer } from '../types';
 
 /** Poll interval for team/status changes; the safety net behind the two realtime paths. */
@@ -276,8 +277,8 @@ export default function JudgePage() {
   if (phase === 'loading') {
     return (
       <div className="auth-page">
+        <BrandLogo className="auth-page__logo" />
         <div className="auth-card text-center">
-          <img src="/brand/logo.png" alt="مياهثون" className="auth-card__logo" />
           <div className="spinner" style={{ margin: '12px auto' }} />
           <p className="text-secondary">جاري تحميل الجلسة...</p>
         </div>
@@ -289,8 +290,8 @@ export default function JudgePage() {
     const ended = phase === 'ended';
     return (
       <div className="auth-page">
+        <BrandLogo className="auth-page__logo" />
         <div className="auth-card text-center">
-          <img src="/brand/logo.png" alt="مياهثون" className="auth-card__logo" />
           <div className="empty-state">
             {ended ? <CheckCircle2 /> : <Link2Off />}
             <h3>{ended ? 'انتهت جلسة التحكيم' : 'رابط الجلسة غير صالح'}</h3>
@@ -308,8 +309,8 @@ export default function JudgePage() {
   if (phase === 'join') {
     return (
       <div className="auth-page">
+        <BrandLogo className="auth-page__logo" />
         <div className="auth-card">
-          <img src="/brand/logo.png" alt="مياهثون" className="auth-card__logo" />
           <h1 className="auth-card__title">الانضمام للتحكيم</h1>
           <p className="auth-card__subtitle">{session?.name || 'جلسة تحكيم'}</p>
 
@@ -360,7 +361,7 @@ export default function JudgePage() {
     <div className="judge-page">
       <div className="judge-page__inner">
         <div className="judge-page__topbar">
-          <img src="/brand/logo2.png" alt="مياهثون" />
+          <BrandLockup />
           <div className="flex items-center gap-2">
             {pendingCount > 0 && (
               <span className="judge-page__judge" title="إجابات بانتظار الإرسال">
