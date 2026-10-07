@@ -8,13 +8,15 @@ import type {
  * Data access layer.
  *
  * Rules that keep the app stable under load (see stress/ and
- * supabase-migration-v2.sql):
+ * supabase-schema.sql):
  *   - Never fetch an unbounded list. Anything that grows with the number of
  *     answers is aggregated server-side (RPC) or filtered to one team.
  *   - Answers are written with upsert on the unique
  *     (session, team, judge, question) key, so retries are idempotent.
  *   - No JSON blobs: teams and questions live in session_teams /
- *     session_questions.
+ *     session_questions, answer choices in question_choices.
+ *   - Points are worked out by the server from the chosen choice
+ *     (answers_set_points); devices never send points.
  */
 
 // ---------------------------------------------------------------- Teams ----
@@ -52,12 +54,51 @@ export const getQuestionBanks = async (): Promise<QuestionBank[]> => {
   return data || [];
 };
 
+/** Question columns plus its choices (rows in question_choices). */
+const QUESTION_COLUMNS = 'id, text, section, weight, bank_id, created_at, question_choices(id, text, weight, position)';
+
+type QuestionRow = Omit<Question, 'choices' | 'weight'> & {
+  weight: number | string | null;
+  question_choices: { id: string; text: string; weight: number | string; position: number }[] | null;
+};
+
+const toQuestion = (row: QuestionRow, maxPoints?: number | string | null): Question => {
+  const { question_choices, ...rest } = row;
+  return {
+    ...rest,
+    weight: Number(row.weight ?? 1),
+    choices: (question_choices || [])
+      .map((c) => ({ id: c.id, text: c.text, weight: Number(c.weight), position: c.position }))
+      .sort((a, b) => a.position - b.position),
+    ...(maxPoints != null ? { maxPoints: Number(maxPoints) } : {}),
+  };
+};
+
 export const getQuestions = async (bankId?: string): Promise<Question[]> => {
-  let query = supabase.from('questions').select('*');
+  let query = supabase.from('questions').select(QUESTION_COLUMNS);
   if (bankId) query = query.eq('bank_id', bankId);
   const { data, error } = await query.order('text');
   if (error) throw error;
-  return data || [];
+  return ((data || []) as unknown as QuestionRow[]).map((r) => toQuestion(r));
+};
+
+export interface NewBankQuestion {
+  text: string;
+  section: string;
+  /** Section weight (the section's share of the session total). */
+  weight: number;
+  choices: { text: string; weight: number }[];
+}
+
+/**
+ * Saves a bank with its questions and choices in ONE transaction
+ * (create_question_bank): either everything is saved or nothing is.
+ * The server validates and returns an Arabic message on bad input.
+ */
+export const createQuestionBank = async (name: string, questions: NewBankQuestion[]): Promise<string> => {
+  const { data, error } = await supabase.rpc('create_question_bank', { p_name: name, p_questions: questions });
+  if (error) throw error;
+  return data as string;
 };
 
 export const getQuestionsByBank = async (bankId: string): Promise<Question[]> => getQuestions(bankId);
@@ -166,16 +207,17 @@ export const getSessionTeams = async (sessionId: string): Promise<SessionTeam[]>
   return (data || []).map((t) => ({ name: t.name, track: t.track ?? null }));
 };
 
+/** Ordered questions of a session, each with its choices and the points it is worth here. */
 export const getSessionQuestions = async (sessionId: string): Promise<Question[]> => {
   const { data, error } = await supabase
     .from('session_questions')
-    .select('position, questions(*)')
+    .select(`position, max_points, questions(${QUESTION_COLUMNS})`)
     .eq('session_id', sessionId)
     .order('position');
   if (error) throw error;
-  return (data || [])
-    .map((r) => (r as unknown as { questions: Question | null }).questions)
-    .filter((q): q is Question => Boolean(q));
+  return ((data || []) as unknown as { max_points: number | string | null; questions: QuestionRow | null }[])
+    .filter((r) => r.questions)
+    .map((r) => toQuestion(r.questions!, r.max_points));
 };
 
 export const setCurrentTeam = async (sessionId: string, index: number, team: string): Promise<void> => {
@@ -268,10 +310,12 @@ const ANSWER_TIMEOUT_MS = 10_000;
 /**
  * Idempotent write: one row per (session, team, judge, question).
  * Re-sending the same answer (offline replay, retry) is harmless.
+ * The server sets `points` from the choice.
  */
 export const upsertAnswer = async (answerData: {
   answer: string;
-  points: number;
+  /** Missing only for answers queued by builds before v4 (matched by text). */
+  choice_id?: string;
   question_id: string;
   team_id: string;
   judge_id: string;
@@ -298,10 +342,10 @@ export const upsertAnswer = async (answerData: {
 /** A judge's own answers for one team (bounded by question count). */
 export const getJudgeAnswersForTeam = async (
   sessionId: string, judgeId: string, teamId: string
-): Promise<Pick<Answer, 'question_id' | 'answer'>[]> => {
+): Promise<Pick<Answer, 'question_id' | 'answer' | 'choice_id'>[]> => {
   const { data, error } = await supabase
     .from('answers')
-    .select('question_id, answer')
+    .select('question_id, answer, choice_id')
     .eq('session_id', sessionId)
     .eq('judge_id', judgeId)
     .eq('team_id', teamId);
@@ -349,7 +393,11 @@ export const getTeamProgress = async (sessionId: string, teamId: string): Promis
   return out;
 };
 
-/** Leaderboard aggregated in SQL: never limited by row caps. */
+/**
+ * Leaderboard aggregated in SQL: never limited by row caps.
+ * totalPoints is out of the session total (100): per question, the average of
+ * the judges who answered it, summed over the questions.
+ */
 export const getLeaderboard = async (sessionId: string): Promise<LeaderboardEntry[]> => {
   const { data, error } = await supabase.rpc('session_leaderboard', { p_session_id: sessionId });
   if (error) throw error;

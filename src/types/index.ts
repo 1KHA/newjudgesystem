@@ -19,19 +19,26 @@ export interface QuestionBank {
   questions?: Question[];
 }
 
+/** One answer button of a question (row in `question_choices`). */
 export interface QuestionChoice {
+  id: string;
   text: string;
   weight: number;
+  position: number;
 }
 
 export interface Question {
   id: string;
   text: string;
-  choices: string[] | QuestionChoice[]; // Support both formats for backward compatibility
+  /** Ordered by position. */
+  choices: QuestionChoice[];
   section: string;
+  /** Section weight: the section's share of the session total. */
   weight: number;
   bank_id?: string;
   created_at?: string;
+  /** Points this question is worth in a session (set when loaded for a session). */
+  maxPoints?: number;
 }
 
 export interface Judge {
@@ -76,6 +83,8 @@ export interface SessionSummary extends Session {
 export interface Answer {
   id: string;
   answer: string;
+  choice_id?: string | null;
+  /** Set by the server from the chosen choice (answers_set_points). */
   points?: number;
   question_id: string;
   team_id: string;
@@ -136,8 +145,10 @@ export interface PendingAnswer {
   team_id: string;
   judge_id: string;
   question_id: string;
+  choice_id?: string;
   answer: string;
-  points: number;
+  /** Only in answers queued by builds before v4; the server ignores it. */
+  points?: number;
   queuedAt: number;
   attempts: number;
 }

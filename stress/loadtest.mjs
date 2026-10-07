@@ -318,12 +318,6 @@ class Judge {
     }
     this.answerAll().catch((e) => recordError('judge:answerAll', e));
   }
-  points(q, text) {
-    const w = (c) => (typeof c === 'string' ? 1 : c.weight);
-    const max = Math.max(1, ...q.choices.map(w));
-    const chosen = q.choices.find((c) => (typeof c === 'string' ? c : c.text) === text);
-    return Number(((chosen ? w(chosen) : 0) / max * (q.weight || 1)).toFixed(2));
-  }
   /** Cut the websocket without telling the client (like a NAT/wifi drop). The watchdog must notice. */
   async killSocket() {
     M.scenarios.socketKills++;
@@ -357,7 +351,9 @@ class Judge {
     this.answered.get(team).add(q.id);
     const key = `${team}|${q.id}`;
     this.queue = this.queue.filter((i) => i.key !== key);
-    this.queue.push({ key, session_id: SESSION_ID, team_id: team, judge_id: this.id, question_id: q.id, answer: text, points: this.points(q, text), attempts: 0 });
+    // like JudgePage: send the chosen choice; the server works out the points
+    const choice = q.choices.find((c) => c.text === text);
+    this.queue.push({ key, session_id: SESSION_ID, team_id: team, judge_id: this.id, question_id: q.id, choice_id: choice.id, answer: text, attempts: 0 });
     this.saveQueue();
   }
   async flush() {
@@ -367,7 +363,7 @@ class Judge {
       while (this.queue.length) {
         const it = this.queue[0];
         const t0 = Date.now();
-        const row = { session_id: it.session_id, team_id: it.team_id, judge_id: it.judge_id, question_id: it.question_id, answer: it.answer, points: it.points, updated_at: new Date().toISOString() };
+        const row = { session_id: it.session_id, team_id: it.team_id, judge_id: it.judge_id, question_id: it.question_id, choice_id: it.choice_id, answer: it.answer, updated_at: new Date().toISOString() };
         const { error } = await this.sb.from('answers').upsert(row, { onConflict: 'session_id,team_id,judge_id,question_id' }).select('id').single();
         if (error) { it.attempts++; M.answersFailed++; recordError('judge:upsertAnswer', error); break; }
         M.answerLatency.push(Date.now() - t0); cap(M.answerLatency);
@@ -415,14 +411,18 @@ class Judge {
 
 async function setup(admin) {
   log(`Creating question bank + ${CFG.questionsPerTeam} questions...`);
-  const { data: bank, error: be } = await admin.from('question_banks').insert({ name: `${TAG} load test bank` }).select().single();
+  // saved like the app does: bank + questions + choices in one transaction
+  const { data: bankId, error: be } = await admin.rpc('create_question_bank', {
+    p_name: `${TAG} load test bank`,
+    p_questions: Array.from({ length: CFG.questionsPerTeam }, (_, i) => ({
+      text: `${TAG} سؤال التحكيم رقم ${i + 1}`, section: `${TAG} عام`, weight: 1,
+      choices: [{ text: 'ممتاز', weight: 5 }, { text: 'جيد جدا', weight: 4 }, { text: 'جيد', weight: 3 }, { text: 'مقبول', weight: 2 }, { text: 'ضعيف', weight: 1 }],
+    })),
+  });
   if (be) throw be;
-  const { data: questions, error: qe } = await admin.from('questions').insert(Array.from({ length: CFG.questionsPerTeam }, (_, i) => ({
-    text: `${TAG} سؤال التحكيم رقم ${i + 1}`,
-    choices: [{ text: 'ممتاز', weight: 5 }, { text: 'جيد جدا', weight: 4 }, { text: 'جيد', weight: 3 }, { text: 'مقبول', weight: 2 }, { text: 'ضعيف', weight: 1 }],
-    section: `${TAG} عام`, weight: 1, bank_id: bank.id,
-  }))).select();
+  const { data: qrows, error: qe } = await admin.from('questions').select('id, text, section, weight, question_choices(id, text, weight, position)').eq('bank_id', bankId).order('text');
   if (qe) throw qe;
+  const questions = qrows.map(({ question_choices, ...q }) => ({ ...q, choices: question_choices.sort((a, b) => a.position - b.position) }));
   const teams = Array.from({ length: CFG.teams }, (_, i) => `${TAG}-team-${String(i + 1).padStart(3, '0')}`);
   const { error: se } = await admin.from('sessions').insert({
     name: `${TAG} load test session`, session_id: SESSION_ID, host_token: crypto.randomUUID(), host_id: null,
@@ -453,10 +453,15 @@ async function integrityCheck(expected) {
     add('no duplicate answers', rows === distinct, `${rows} rows, ${distinct} distinct keys`);
     add('every judge answered every question for every team', rows === expected, `${rows} rows, expected ${expected}`);
     const lb = await q('select * from session_leaderboard($1)', [SESSION_ID]);
-    const direct = await q('select team_id, sum(points)::numeric(10,2) s from answers where session_id=$1 group by 1', [SESSION_ID]);
+    // team score = per question, the average of the judges who answered it, summed
+    const direct = await q(`select team_id, round(sum(avg_points), 2) s from (
+      select team_id, question_id, avg(points) avg_points from answers where session_id=$1 group by 1, 2) x group by 1`, [SESSION_ID]);
     const dm = new Map(direct.map((r) => [r.team_id, Number(r.s)]));
     const mismatch = lb.filter((r) => Math.abs(Number(r.total_points) - (dm.get(r.team_id) || 0)) > 0.005);
-    add('leaderboard equals direct SQL sum for every team', mismatch.length === 0, `${lb.length} teams, ${mismatch.length} mismatches`);
+    add('leaderboard equals the judges-average computed directly for every team', mismatch.length === 0, `${lb.length} teams, ${mismatch.length} mismatches`);
+    const [{ team_max, judge_max }] = await q(`select (select max(total_points) from session_leaderboard($1))::float8 team_max,
+      (select max(s) from (select sum(points) s from answers where session_id=$1 group by team_id, judge_id) x)::float8 judge_max`, [SESSION_ID]);
+    add('scores are out of 100 (team and single judge)', team_max <= 100 && judge_max <= 100.0001, `best team ${team_max}, best single-judge total ${judge_max?.toFixed(4)}`);
     const [{ n: results }] = await q('select count(*)::int n from session_results where session_id=$1', [SESSION_ID]);
     add('session_results has one row per team', results === CFG.teams, `${results}/${CFG.teams}`);
     const [{ status }] = await q('select status from sessions where session_id=$1', [SESSION_ID]);

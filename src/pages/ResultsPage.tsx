@@ -211,11 +211,11 @@ export default function ResultsPage() {
                           </div>
                           <div className="stat-card stat-card--green">
                             <div className="stat-value">{maxScore.toFixed(2)}</div>
-                            <div className="stat-label">أعلى نقاط</div>
+                            <div className="stat-label">أعلى درجة (من 100)</div>
                           </div>
                           <div className="stat-card stat-card--cyan">
                             <div className="stat-value">{avgScore.toFixed(2)}</div>
-                            <div className="stat-label">متوسط النقاط</div>
+                            <div className="stat-label">متوسط الدرجات</div>
                           </div>
                           <div className="stat-card stat-card--yellow">
                             <div className="stat-value">{d.judgeCount}</div>
@@ -230,7 +230,7 @@ export default function ResultsPage() {
 
                       <div className="formula-box">
                         <div className="formula-box__title"><Calculator /> معادلة الحساب</div>
-                        <div className="formula-box__body">النقاط = (وزن الخيار ÷ أقصى وزن) × وزن السؤال، والمجموع يُحسب على الخادم من جميع الإجابات</div>
+                        <div className="formula-box__body">لكل قسم نصيب من 100 حسب وزنه يُقسم بالتساوي على أسئلته، والخيار يعطي (وزنه ÷ أعلى وزن) من درجة السؤال. درجة الفريق = مجموع متوسطات المحكمين لكل سؤال، فلا تتجاوز 100 مهما كان عدد المحكمين. يُحسب كل ذلك على الخادم.</div>
                       </div>
 
                       <h3 className="panel-title mb-4" style={{ fontSize: '17px' }}>
@@ -246,7 +246,7 @@ export default function ResultsPage() {
                               {d.tracks.some(Boolean) && <th className="num">ترتيبه في المسار</th>}
                               <th className="num">الإجابات</th>
                               <th className="num">المحكمون</th>
-                              <th className="num">النقاط</th>
+                              <th className="num">الدرجة من 100</th>
                             </tr>
                           </thead>
                           <tbody>
@@ -291,7 +291,7 @@ export default function ResultsPage() {
                                                   <th>المحكم</th>
                                                   <th>السؤال</th>
                                                   <th>الإجابة</th>
-                                                  <th className="num">النقاط</th>
+                                                  <th className="num">درجة الإجابة</th>
                                                   <th>الوقت</th>
                                                 </tr>
                                               </thead>

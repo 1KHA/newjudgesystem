@@ -56,7 +56,7 @@ export default function TrackPodium({ leaderboard, trackOrder, final = false, cu
                   <span className="text-xs text-secondary">المركز {PLACE[r]}</span>
                   {showTrack && e.track && <span className="track-badge track-badge--sm">{e.track}</span>}
                   {e.judgeCount < maxJudges && (
-                    <span className="podium__warn" title="مجموع النقاط يعتمد على عدد المحكمين">
+                    <span className="podium__warn" title="الدرجة متوسط من قيّم الفريق فقط، وعدد محكميه أقل من غيره">
                       <AlertTriangle /> {e.judgeCount} من {maxJudges} محكمين
                     </span>
                   )}

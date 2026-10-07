@@ -60,12 +60,14 @@ const CHOICES = [
 const QTEXT = ['وضوح المشكلة وأهميتها', 'جودة الحل المقترح', 'قابلية التطبيق', 'الابتكار والتميز', 'جودة العرض'];
 
 async function makeBank() {
-  const { data: bank, error } = await sb.from('question_banks').insert({ name: `${TAG} ipad bank` }).select().single();
+  // saved like the app does: bank + questions + choices in one transaction
+  const { data: id, error } = await sb.rpc('create_question_bank', {
+    p_name: `${TAG} ipad bank`,
+    p_questions: QTEXT.map((t, i) => ({ text: `${i + 1}. ${t}`, section: 'التحكيم', weight: 1, choices: CHOICES })),
+  });
   if (error) throw error;
-  bankId = bank.id;
-  const { data: qs, error: qe } = await sb.from('questions').insert(QTEXT.map((t, i) => ({
-    text: `${i + 1}. ${t}`, choices: CHOICES, section: 'التحكيم', weight: 1, bank_id: bank.id,
-  }))).select();
+  bankId = id;
+  const { data: qs, error: qe } = await sb.from('questions').select('id, text').eq('bank_id', id);
   if (qe) throw qe;
   return qs.sort((a, b) => a.text.localeCompare(b.text));
 }
@@ -361,7 +363,9 @@ async function mainEvent(browser, questions) {
     }
   }
   const lb = (await pgc.query('select * from session_leaderboard($1)', [sid])).rows;
-  const direct = new Map((await pgc.query('select team_id, sum(points)::numeric(10,2) s from answers where session_id=$1 group by 1', [sid])).rows.map((r) => [r.team_id, Number(r.s)]));
+  // team score = per question, the average of the judges who answered it, summed (out of 100)
+  const direct = new Map((await pgc.query(`select team_id, round(sum(a), 2) s from (select team_id, question_id, avg(points) a
+    from answers where session_id=$1 group by 1, 2) x group by 1`, [sid])).rows.map((r) => [r.team_id, Number(r.s)]));
   const lbMismatch = lb.filter((r) => Math.abs(Number(r.total_points) - (direct.get(r.team_id) || 0)) > 0.005).length;
   const resultsRows = (await pgc.query('select count(*)::int n from session_results where session_id=$1', [sid])).rows[0].n;
   record('V01', 'Every answer tapped on an iPad is in the database with the final choice',

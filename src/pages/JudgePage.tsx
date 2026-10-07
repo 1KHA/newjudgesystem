@@ -16,7 +16,7 @@ import { RealtimeManager } from '../lib/realtimeManager';
 import { healthStore } from '../lib/connectionHealth';
 import { useConnectionHealth } from '../hooks/useConnectionHealth';
 import BrandLockup, { BrandLogo } from '../components/BrandLockup';
-import type { Question, SessionDetail, Session, PendingAnswer } from '../types';
+import type { Question, QuestionChoice, SessionDetail, Session, PendingAnswer } from '../types';
 
 /**
  * Session check interval while the live connection is DOWN. While it is up,
@@ -41,21 +41,11 @@ function readStoredJudge(sessionId: string): StoredJudge | null {
   } catch { return null; }
 }
 
-function calculatePoints(question: Question, selectedAnswer: string): number {
-  const choices = question.choices;
-  let selectedWeight = 1;
-  let maxWeight = 1;
-  if (choices.length > 0 && typeof choices[0] === 'object') {
-    const objs = choices as { text: string; weight: number }[];
-    selectedWeight = objs.find((c) => c.text === selectedAnswer)?.weight ?? 0;
-    maxWeight = Math.max(...objs.map((c) => c.weight));
-  }
-  return Number(((selectedWeight / maxWeight) * (question.weight || 1)).toFixed(2));
-}
-
+// The server works out the points from the choice; answers queued by an older
+// build carry no choice_id and are matched by their text
 const sendPending = async (p: PendingAnswer) => {
   await upsertAnswer({
-    answer: p.answer, points: p.points, question_id: p.question_id,
+    answer: p.answer, choice_id: p.choice_id, question_id: p.question_id,
     team_id: p.team_id, judge_id: p.judge_id, session_id: p.session_id
   });
 };
@@ -296,15 +286,15 @@ export default function JudgePage() {
 
   // -------------------------------------------------------------- actions --
 
-  const handleAnswerSelect = (question: Question, answer: string) => {
+  const handleAnswerSelect = (question: Question, choice: QuestionChoice) => {
     const team = currentTeamRef.current;
     if (!team || !judge || !sessionId) return;
-    if (selectedAnswers[question.id] === answer) return;
-    setSelectedAnswers((prev) => ({ ...prev, [question.id]: answer }));
+    if (selectedAnswers[question.id] === choice.text) return;
+    setSelectedAnswers((prev) => ({ ...prev, [question.id]: choice.text }));
     setSubmitted(false);
     queueRef.current?.enqueue({
       session_id: sessionId, team_id: team, judge_id: judge.id,
-      question_id: question.id, answer, points: calculatePoints(question, answer)
+      question_id: question.id, choice_id: choice.id, answer: choice.text
     });
     void queueRef.current?.flush(sendPending).catch(() => undefined);
   };
@@ -487,21 +477,17 @@ export default function JudgePage() {
                   <span className="question-block__num">السؤال {index + 1}</span>
                   <div className="question-block__text">{question.text}</div>
                   <div className="choice-grid">
-                    {question.choices.map((choice, choiceIdx) => {
-                      const choiceText = typeof choice === 'string' ? choice : choice.text;
-                      const choiceWeight = typeof choice === 'string' ? 1 : choice.weight;
-                      const isSelected = selectedAnswers[question.id] === choiceText;
+                    {question.choices.map((choice) => {
+                      const isSelected = selectedAnswers[question.id] === choice.text;
                       return (
                         <button
-                          key={choiceIdx}
+                          key={choice.id}
                           className={`answer-btn ${isSelected ? 'selected' : ''}`}
-                          onClick={() => handleAnswerSelect(question, choiceText)}
+                          onClick={() => handleAnswerSelect(question, choice)}
                           aria-pressed={isSelected}
                         >
-                          <div>{choiceText}</div>
-                          {typeof choice !== 'string' && (
-                            <div className="answer-btn__weight">وزن: {choiceWeight}</div>
-                          )}
+                          <div>{choice.text}</div>
+                          <div className="answer-btn__weight">وزن: {choice.weight}</div>
                           {isSelected && <span className="answer-btn__check"><Check /></span>}
                         </button>
                       );

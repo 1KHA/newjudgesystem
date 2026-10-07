@@ -6,17 +6,22 @@ import {
   getTeams,
   getQuestionBanks,
   getQuestions,
+  createQuestionBank,
   createSession,
   getJudgesBySession
 } from '../lib/supabaseService';
 import { RealtimeManager } from '../lib/realtimeManager';
 import { healthStore } from '../lib/connectionHealth';
 import { trackOrder } from '../lib/teamImport';
+import { SESSION_TOTAL_POINTS, questionMaxPoints, sectionPoints } from '../lib/scoring';
 import TeamUploadPanel from '../components/TeamUploadPanel';
+import QuestionBankEditor from '../components/QuestionBankEditor';
+import { newSection, draftProblems, draftToBankQuestions, orderBySection, type DraftSection } from '../lib/questionBank';
+import QuestionList from '../components/QuestionList';
 import type { Team, Question, QuestionBank, Judge, SessionTeam } from '../types';
 import {
   ArrowRight, ArrowUp, ArrowDown, Users, HelpCircle, Scale, Check, CheckCheck, X,
-  Plus, Minus, Pencil, Trash2, Save, Loader2, Link2, Copy, Clock, Play, UserRound,
+  Plus, Pencil, Trash2, Save, Loader2, Link2, Copy, Clock, Play, UserRound,
   AlertTriangle, ChevronLeft
 } from 'lucide-react';
 import BrandHeader from '../components/BrandHeader';
@@ -51,9 +56,7 @@ export default function SetupPage() {
   // Step 2 — optional inline "create a new bank" form
   const [showBankForm, setShowBankForm] = useState(false);
   const [newBankName, setNewBankName] = useState('');
-  const [newBankQuestions, setNewBankQuestions] = useState<
-    { text: string; choices: { text: string; weight: number }[] }[]
-  >([{ text: '', choices: [{ text: '', weight: 1 }, { text: '', weight: 1 }] }]);
+  const [newBankSections, setNewBankSections] = useState<DraftSection[]>(() => [newSection(0)]);
   const [savingBank, setSavingBank] = useState(false);
 
   // Step 3 — session + judges
@@ -244,42 +247,9 @@ export default function SetupPage() {
 
   // ---- Step 2 (optional): create a new question bank inline ----
 
-  const addNewBankQuestion = () => {
-    setNewBankQuestions(prev => [...prev, { text: '', choices: [{ text: '', weight: 1 }, { text: '', weight: 1 }] }]);
-  };
-
-  const removeNewBankQuestion = (index: number) => {
-    setNewBankQuestions(prev => prev.filter((_, i) => i !== index));
-  };
-
-  const updateNewBankQuestionText = (index: number, text: string) => {
-    setNewBankQuestions(prev => prev.map((q, i) => i === index ? { ...q, text } : q));
-  };
-
-  const updateNewBankChoiceText = (qIndex: number, cIndex: number, text: string) => {
-    setNewBankQuestions(prev => prev.map((q, i) => {
-      if (i !== qIndex) return q;
-      const choices = q.choices.map((c, ci) => ci === cIndex ? { ...c, text } : c);
-      return { ...q, choices };
-    }));
-  };
-
-  const addNewBankChoice = (qIndex: number) => {
-    setNewBankQuestions(prev => prev.map((q, i) =>
-      i === qIndex ? { ...q, choices: [...q.choices, { text: '', weight: 1 }] } : q
-    ));
-  };
-
-  const removeNewBankChoice = (qIndex: number) => {
-    setNewBankQuestions(prev => prev.map((q, i) => {
-      if (i !== qIndex || q.choices.length <= 1) return q;
-      return { ...q, choices: q.choices.slice(0, -1) };
-    }));
-  };
-
   const resetBankForm = () => {
     setNewBankName('');
-    setNewBankQuestions([{ text: '', choices: [{ text: '', weight: 1 }, { text: '', weight: 1 }] }]);
+    setNewBankSections([newSection(0)]);
   };
 
   const handleCreateBank = async () => {
@@ -287,44 +257,29 @@ export default function SetupPage() {
       alert('يرجى إدخال اسم بنك الأسئلة');
       return;
     }
-    const validQuestions = newBankQuestions.filter(q => q.text.trim() && q.choices.every(c => c.text.trim()));
-    if (validQuestions.length === 0) {
-      alert('أضف سؤالًا واحدًا على الأقل بنص وخيارات كاملة');
+    // Same checks as the questions page (the server checks again)
+    const problems = draftProblems(newBankSections);
+    if (problems.length > 0) {
+      alert(problems.slice(0, 12).join('\n') + (problems.length > 12 ? `\nو${problems.length - 12} ملاحظات أخرى` : ''));
       return;
     }
 
     setSavingBank(true);
     try {
-      const { data: bank, error: bankError } = await supabase
-        .from('question_banks')
-        .insert({ name: newBankName.trim() })
-        .select()
-        .single();
-      if (bankError) throw bankError;
-
-      const { data: insertedQuestions, error: questionsError } = await supabase
-        .from('questions')
-        .insert(validQuestions.map(q => ({
-          text: q.text.trim(),
-          choices: q.choices.map(c => ({ text: c.text.trim(), weight: c.weight })),
-          section: 'عام',
-          weight: 1,
-          bank_id: bank.id
-        })))
-        .select();
-      if (questionsError) throw questionsError;
+      // Bank, questions and choices are saved in one transaction: all or nothing
+      const bankId = await createQuestionBank(newBankName.trim(), draftToBankQuestions(newBankSections));
+      const inserted = await getQuestions(bankId);
 
       resetBankForm();
       setShowBankForm(false);
       await loadInitialData();
-      // New bank only contains what we just inserted — select it directly
-      // rather than re-deriving from `allQuestions`, which is still stale here.
-      setSelectedBank(bank.id);
-      setQuestions((insertedQuestions || []) as Question[]);
-      setSelectedQuestions((insertedQuestions || []).map(q => q.id));
+      // Select the new bank and all its questions directly: `allQuestions` is still stale here
+      setSelectedBank(bankId);
+      setQuestions(inserted);
+      setSelectedQuestions(inserted.map(q => q.id));
     } catch (error) {
       console.error('Error creating question bank:', error);
-      alert('خطأ في إنشاء بنك الأسئلة');
+      alert(`خطأ في إنشاء بنك الأسئلة: ${(error as { message?: string }).message ?? ''}`);
     } finally {
       setSavingBank(false);
     }
@@ -346,8 +301,8 @@ export default function SetupPage() {
     setCreating(true);
     try {
       const newSessionId = crypto.randomUUID().substring(0, 8);
-      // Keep the questions in the order they appear in the selected bank
-      const questionIds = questions.filter(q => selectedQuestions.includes(q.id)).map(q => q.id);
+      // Judges get the questions in the order the picker shows them (section by section)
+      const questionIds = orderBySection(questions).filter(q => selectedQuestions.includes(q.id)).map(q => q.id);
       const session = await createSession({
         name: `Session ${new Date().toISOString()}`,
         session_id: newSessionId,
@@ -358,7 +313,7 @@ export default function SetupPage() {
           .filter(t => selectedTeams.includes(t.name))
           .map(t => ({ name: t.name, track: t.track ?? null })),
         questionIds,
-        total_points: 100
+        total_points: SESSION_TOTAL_POINTS
       });
       setSessionId(session.session_id);
     } catch (error) {
@@ -370,6 +325,20 @@ export default function SetupPage() {
   };
 
   const judgeUrl = `${window.location.origin}/judge/${sessionId}`;
+
+  // Same split the server will use for the selected questions
+  const pickedQuestions = questions.filter(q => selectedQuestions.includes(q.id));
+  const pointsSplit = sectionPoints(pickedQuestions);
+  const pickedPoints = questionMaxPoints(pickedQuestions);
+  const allPicked = questions.length > 0 && questions.every(q => selectedQuestions.includes(q.id));
+
+  const toggleQuestion = (id: string) => {
+    setSelectedQuestions(prev => (prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]));
+  };
+
+  const toggleAllQuestions = () => {
+    setSelectedQuestions(allPicked ? [] : questions.map(q => q.id));
+  };
 
   const handleCopyLink = async () => {
     try {
@@ -678,53 +647,9 @@ export default function SetupPage() {
                     />
                   </div>
 
-                  {newBankQuestions.map((q, qIdx) => (
-                    <div key={qIdx} className="panel mb-3">
-                      <div className="field-row mb-2" style={{ alignItems: 'flex-start' }}>
-                        <textarea
-                          value={q.text}
-                          onChange={(e) => updateNewBankQuestionText(qIdx, e.target.value)}
-                          placeholder={`نص السؤال ${qIdx + 1}`}
-                          style={{ minHeight: '50px' }}
-                        />
-                        {newBankQuestions.length > 1 && (
-                          <button className="icon-btn icon-btn--danger" onClick={() => removeNewBankQuestion(qIdx)} title="حذف السؤال" aria-label="حذف السؤال">
-                            <Trash2 />
-                          </button>
-                        )}
-                      </div>
-                      {q.choices.map((c, cIdx) => (
-                        <div key={cIdx} className="field-row mb-2">
-                          <span className="choice-chip__bullet" />
-                          <input
-                            type="text"
-                            value={c.text}
-                            onChange={(e) => updateNewBankChoiceText(qIdx, cIdx, e.target.value)}
-                            placeholder={`خيار ${cIdx + 1}`}
-                            style={{ padding: '6px 10px', fontSize: '13px' }}
-                          />
-                        </div>
-                      ))}
-                      <div className="flex gap-2">
-                        <button className="btn btn-secondary btn-sm" onClick={() => addNewBankChoice(qIdx)}>
-                          <Plus />
-                          خيار
-                        </button>
-                        {q.choices.length > 1 && (
-                          <button className="btn btn-secondary btn-sm" onClick={() => removeNewBankChoice(qIdx)}>
-                            <Minus />
-                            خيار
-                          </button>
-                        )}
-                      </div>
-                    </div>
-                  ))}
+                  <QuestionBankEditor sections={newBankSections} onChange={setNewBankSections} compact />
 
                   <div className="flex gap-2">
-                    <button className="btn btn-secondary flex-1" onClick={addNewBankQuestion}>
-                      <Plus />
-                      إضافة سؤال آخر
-                    </button>
                     <button className="btn btn-primary flex-1" onClick={handleCreateBank} disabled={savingBank}>
                       {savingBank ? <Loader2 className="spin" /> : <Save />}
                       {savingBank ? 'جاري الحفظ...' : 'حفظ البنك'}
@@ -749,22 +674,46 @@ export default function SetupPage() {
             </div>
 
             <div className="field">
-              <label htmlFor="questionSelect">اختر الأسئلة</label>
-              <select
-                id="questionSelect"
-                multiple
-                value={selectedQuestions}
-                onChange={(e) => {
-                  const selected = Array.from(e.target.selectedOptions, option => option.value);
-                  setSelectedQuestions(selected);
-                }}
-              >
-                {questions.map(question => (
-                  <option key={question.id} value={question.id}>{question.text}</option>
-                ))}
-              </select>
-              <p className="text-xs text-secondary mt-2">اضغط مع الاستمرار على Ctrl أو لتحديد أكثر من سؤال.</p>
+              <div className="flex items-center justify-between gap-2 mb-2">
+                <label style={{ margin: 0 }}>اختر الأسئلة</label>
+                {questions.length > 0 && (
+                  <button className="btn btn-ghost btn-sm" onClick={toggleAllQuestions}>
+                    {allPicked ? <X /> : <CheckCheck />}
+                    {allPicked ? 'إلغاء تحديد الكل' : 'تحديد الكل'}
+                  </button>
+                )}
+              </div>
+              {questions.length === 0 ? (
+                <div className="empty-state">
+                  <HelpCircle />
+                  <p>لا توجد أسئلة في هذا البنك</p>
+                </div>
+              ) : (
+                <div className="question-picker">
+                  <QuestionList
+                    questions={questions}
+                    selectedIds={selectedQuestions}
+                    onToggle={toggleQuestion}
+                    points={pickedPoints}
+                  />
+                </div>
+              )}
             </div>
+
+            {pointsSplit.length > 0 && (
+              <div className="panel panel--muted">
+                <div className="fw-600 mb-2">توزيع الدرجة ({SESSION_TOTAL_POINTS} لكل محكم)</div>
+                <ul className="points-split">
+                  {pointsSplit.map((r) => (
+                    <li key={r.section}>
+                      <span>{r.section} <span className="text-secondary">({r.questions} {r.questions === 1 ? 'سؤال' : 'أسئلة'})</span></span>
+                      <span className="fw-700">{r.points.toFixed(2)}</span>
+                    </li>
+                  ))}
+                </ul>
+                <p className="text-xs text-secondary mt-2 mb-0">نتيجة الفريق متوسط درجات المحكمين، فلا تتجاوز {SESSION_TOTAL_POINTS} مهما كان عددهم.</p>
+              </div>
+            )}
           </div>
 
           {/* ============ STEP 3: JUDGES ============ */}

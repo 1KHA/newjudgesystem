@@ -68,7 +68,9 @@ const TEAMS = TRACKS.flatMap((track, t) => PLAN[t].map((sum, k) => ({
 /** five answer weights (1..5) adding up to `sum` */
 const weightsFor = (sum) => { const w = [1, 1, 1, 1, 1]; let left = sum - 5; for (let i = 0; i < 5 && left > 0; i++) { const add = Math.min(4, left); w[i] += add; left -= add; } return w; };
 const JUDGES = 3;
-const expectedTotal = (sum) => +(JUDGES * sum / 5).toFixed(2);
+// 5 questions in one section = 20 points each; a choice gives weight/5 of that.
+// Every judge gives the same answers, so the team score (judges' average) = 4 x sum, out of 100.
+const expectedTotal = (sum) => +(100 * sum / 25).toFixed(2);
 
 function expectedRanks() {
   const rank = (list) => list.map((t) => ({ ...t, rank: 1 + list.filter((o) => expectedTotal(o.sum) > expectedTotal(t.sum)).length }));
@@ -159,12 +161,14 @@ async function main() {
   const expected = expectedRanks();
   writeFileSync(`${OUT}/expected.json`, JSON.stringify({ expected, teams: TEAMS }, null, 2));
 
-  // question bank used by the session (5 questions x 5 weighted choices)
-  const { data: bank } = await sb.from('question_banks').insert({ name: `${TAG} أسئلة المسارات` }).select().single();
-  created.bankId = bank.id;
-  const { data: qs } = await sb.from('questions').insert([1, 2, 3, 4, 5].map((i) => ({
-    text: `${i}. معيار التحكيم ${i}`, choices: CHOICES, section: 'التحكيم', weight: 1, bank_id: bank.id,
-  }))).select();
+  // question bank used by the session (5 questions x 5 weighted choices), saved like the app does
+  const { data: bankId, error: bankErr } = await sb.rpc('create_question_bank', {
+    p_name: `${TAG} أسئلة المسارات`,
+    p_questions: [1, 2, 3, 4, 5].map((i) => ({ text: `${i}. معيار التحكيم ${i}`, section: 'التحكيم', weight: 1, choices: CHOICES })),
+  });
+  if (bankErr) throw bankErr;
+  created.bankId = bankId;
+  const { data: qs } = await sb.from('questions').select('id, text').eq('bank_id', bankId);
   qs.sort((a, b) => a.text.localeCompare(b.text));
 
   const browser = await webkit.launch();
@@ -260,9 +264,11 @@ async function main() {
     { afterDeselect: afterOff.replace(/\s+/g, ' '), afterReselect: afterOn.replace(/\s+/g, ' ') });
 
   // ---- U07 create the session ----
-  await A.selectOption('#bankSelect', { label: bank.name });
-  await sleep(500);
-  await A.selectOption('#questionSelect', qs.map((q) => q.id));
+  await A.selectOption('#bankSelect', created.bankId);
+  await A.locator('.question-picker input[type=checkbox]').first().waitFor({ timeout: 15000 });
+  await A.locator('.field', { hasText: 'اختر الأسئلة' }).locator('button:has-text("تحديد الكل")').click();
+  const picked = await A.locator('.question-picker input[type=checkbox]:checked').count();
+  if (picked !== qs.length) throw new Error(`picked ${picked} of ${qs.length} questions`);
   await A.click('button:has-text("إنشاء الجلسة ورابط المحكمين")');
   await A.locator('.session-code').waitFor({ timeout: 20000 });
   const sid = (await A.locator('.session-code').innerText()).trim();
@@ -402,9 +408,11 @@ async function main() {
   const totalsOk = lb.every((r) => Math.abs(Number(r.total_points) - expectedTotal(TEAMS.find((t) => t.name === r.team_id).sum)) < 0.01);
   const savedResults = (await db.query('select count(*)::int n, count(track)::int tracked, count(overall_rank)::int ranked from session_results where session_id=$1', [sid])).rows[0];
   const answers = (await db.query('select count(*)::int n, count(distinct (team_id, judge_id, question_id))::int d from answers where session_id=$1', [sid])).rows[0];
-  record('R02', 'Every answer stored once; totals match the plan; results saved with track and rank',
-    totalsOk && answers.n === 600 && answers.d === 600 && savedResults.n === 40 && savedResults.tracked === 40 && savedResults.ranked === 40,
-    { answers: answers.n, expectedAnswers: 600, duplicates: answers.n - answers.d, totalsMatchPlan: totalsOk, savedResults });
+  const maxScore = Math.max(...lb.map((r) => Number(r.total_points)));
+  const judgeSum = (await db.query('select max(s)::float8 m from (select sum(points) s from answers where session_id=$1 group by team_id, judge_id) x', [sid])).rows[0].m;
+  record('R02', 'Every answer stored once; scores out of 100 match the plan; results saved with track and rank',
+    totalsOk && maxScore === 100 && Math.abs(judgeSum - 100) < 0.0001 && answers.n === 600 && answers.d === 600 && savedResults.n === 40 && savedResults.tracked === 40 && savedResults.ranked === 40,
+    { answers: answers.n, expectedAnswers: 600, duplicates: answers.n - answers.d, totalsMatchPlan: totalsOk, bestTeam: maxScore, bestSingleJudgeTotal: judgeSum, judgesPerTeam: JUDGES, savedResults });
 
   // ---- R03 an older session without tracks still renders ----
   const old = (await db.query("select s.session_id from sessions s where s.session_id not like 'lt%' and s.session_id not like 'ip%' and not exists (select 1 from session_teams t where t.session_id = s.session_id and t.track is not null) order by created_at desc limit 1")).rows[0]?.session_id;

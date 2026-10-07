@@ -496,7 +496,7 @@ export default function ControlPage() {
                     {hasTracks && <th className="num">ترتيبه في المسار</th>}
                     <th className="num">الإجابات</th>
                     <th className="num">المحكمون</th>
-                    <th className="num">إجمالي النقاط</th>
+                    <th className="num">الدرجة من 100</th>
                   </tr>
                 </thead>
                 <tbody>

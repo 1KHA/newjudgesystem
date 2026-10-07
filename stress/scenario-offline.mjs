@@ -45,7 +45,7 @@ const storage = { getItem: (k) => disk.get(k) ?? null, setItem: (k, v) => disk.s
 const send = async (p) => {
   if (!online) throw offlineError();
   const { error } = await sb.from('answers').upsert({
-    answer: p.answer, points: p.points, question_id: p.question_id,
+    answer: p.answer, choice_id: p.choice_id, question_id: p.question_id,  // server sets points
     team_id: p.team_id, judge_id: p.judge_id, session_id: p.session_id,
     updated_at: new Date().toISOString(),
   }, { onConflict: 'session_id,team_id,judge_id,question_id' });
@@ -54,11 +54,16 @@ const send = async (p) => {
 
 async function main() {
   // ---- setup (tagged, removed at the end) ----
-  const { data: bank } = await sb.from('question_banks').insert({ name: `${TAG} scenario bank` }).select().single();
-  const { data: qs } = await sb.from('questions').insert(Array.from({ length: 5 }, (_, n) => ({
-    text: `${TAG} Q${n + 1}`, choices: [{ text: 'A', weight: 3 }, { text: 'B', weight: 2 }, { text: 'C', weight: 1 }],
-    section: 'scenario', weight: 1, bank_id: bank.id,
-  }))).select();
+  const { data: bankId, error: be } = await sb.rpc('create_question_bank', {
+    p_name: `${TAG} scenario bank`,
+    p_questions: Array.from({ length: 5 }, (_, n) => ({
+      text: `${TAG} Q${n + 1}`, section: 'scenario', weight: 1,
+      choices: [{ text: 'A', weight: 3 }, { text: 'B', weight: 2 }, { text: 'C', weight: 1 }],
+    })),
+  });
+  if (be) throw be;
+  const bank = { id: bankId };
+  const { data: qs } = await sb.from('questions').select('id, text, question_choices(id, text)').eq('bank_id', bankId);
   qs.sort((a, b) => a.text.localeCompare(b.text));
   const teams = [`${TAG}-team-1`, `${TAG}-team-2`];
   await sb.from('sessions').insert({ name: `${TAG} load test session`, session_id: SID, host_token: crypto.randomUUID(), status: 'active', current_team_index: 0, current_team_id: teams[0], total_points: 100 });
@@ -92,8 +97,8 @@ async function main() {
   };
   const pick = async (q, choice) => {              // judge taps an answer on the team shown on screen
     const team = page.team;
-    const points = { A: 1, B: 0.67, C: 0.33 }[choice];
-    page.queue.enqueue({ session_id: SID, team_id: team, judge_id: judge.id, question_id: q.id, answer: choice, points });
+    const choiceId = q.question_choices.find((c) => c.text === choice).id;
+    page.queue.enqueue({ session_id: SID, team_id: team, judge_id: judge.id, question_id: q.id, choice_id: choiceId, answer: choice });
     expected.set(`${team}|${q.id}`, choice);
     await page.queue.flush(send).catch(() => {});
   };
