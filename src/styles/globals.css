@@ -1914,3 +1914,316 @@ textarea {
 .spin {
   animation: spin 0.9s linear infinite;
 }
+
+/* ==========================================================================
+   Tracks: badges, selection chips, Excel upload, podiums
+   ========================================================================== */
+
+.track-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 10px;
+  border-radius: var(--radius-full);
+  background: var(--gold-light);
+  color: var(--ink);
+  border: 1px solid var(--gold);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.5;
+  white-space: nowrap;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.track-badge b {
+  font-weight: 700;
+  color: var(--primary);
+}
+
+.track-badge--sm {
+  padding: 1px 8px;
+  font-size: 11px;
+}
+
+.team-tile--selected .track-badge {
+  background: rgba(255, 255, 255, 0.16);
+  border-color: rgba(255, 255, 255, 0.35);
+  color: var(--white);
+}
+
+/* Current team's track on the host's team card and the judge's banner */
+.team-display__track,
+.judge-team-banner__track {
+  display: inline-block;
+  margin-top: 8px;
+  padding: 4px 14px;
+  border-radius: var(--radius-full);
+  background: var(--gold);
+  color: var(--ink);
+  font-size: 14px;
+}
+
+.judge-team-banner__track {
+  font-size: 15px;
+}
+
+/* ---- select teams by track ---- */
+.track-chips {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.track-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 36px;
+  padding: 6px 14px;
+  border-radius: var(--radius-full);
+  border: 1px solid var(--border);
+  background: var(--white);
+  color: var(--text-primary);
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.track-chip b {
+  font-weight: 700;
+  color: var(--text-secondary);
+}
+
+.track-chip--some {
+  border-color: var(--gold);
+  background: var(--gold-light);
+}
+
+.track-chip--on {
+  border-color: var(--primary);
+  background: var(--primary);
+  color: var(--white);
+}
+
+.track-chip--on b {
+  color: var(--gold);
+}
+
+/* ---- manual add form: name + track ---- */
+.field-row--wrap {
+  flex-wrap: wrap;
+}
+
+.field-row--wrap > input {
+  min-width: 140px;
+}
+
+.field-row__track {
+  flex: 0 1 180px !important;
+}
+
+/* ---- Excel upload ---- */
+.upload-panel__head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+  flex-wrap: wrap;
+}
+
+.upload-panel__head .panel-title {
+  margin-bottom: 2px;
+}
+
+/* Visually hidden but still reachable: iPad Safari opens the picker from the label */
+.upload-panel__input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.upload-panel__pick,
+.upload-panel label.btn {
+  min-height: 44px;
+  cursor: pointer;
+}
+
+.upload-panel__status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 0;
+  color: var(--text-secondary);
+  font-size: 14px;
+}
+
+.upload-panel__status svg {
+  width: 18px;
+  height: 18px;
+}
+
+.upload-preview__file {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  margin-bottom: 12px;
+  background: var(--white);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  font-size: 14px;
+  word-break: break-all;
+}
+
+.upload-preview__file > svg {
+  width: 18px;
+  height: 18px;
+  color: var(--success);
+  flex-shrink: 0;
+}
+
+.upload-preview__file .icon-btn {
+  margin-inline-start: auto;
+  flex-shrink: 0;
+}
+
+.upload-preview__summary,
+.upload-preview__tracks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 12px;
+}
+
+.upload-preview__issues {
+  margin: 0;
+  padding-inline-start: 18px;
+  font-size: 13px;
+  line-height: 1.7;
+}
+
+.upload-preview__table {
+  max-height: 300px;
+  overflow-y: auto;
+  background: var(--white);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  -webkit-overflow-scrolling: touch;
+}
+
+/* ---- Podiums: top 3 overall and per track ---- */
+.track-podium {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.podium {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.podium__item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 14px;
+  background: var(--white);
+  border: 1px solid var(--border);
+  border-inline-start: 4px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+
+.podium__item--1 { border-inline-start-color: var(--primary); background: var(--primary-tint); }
+.podium__item--2 { border-inline-start-color: var(--gold); }
+.podium__item--3 { border-inline-start-color: var(--sky); }
+.podium__item--current { box-shadow: 0 0 0 2px var(--gold); }
+
+.podium__body {
+  flex: 1;
+  min-width: 0;
+}
+
+.podium__name {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  font-weight: 700;
+  font-size: 15px;
+  word-break: break-word;
+}
+
+.podium__meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 2px;
+}
+
+.podium__warn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  color: var(--warning-text);
+}
+
+.podium__warn svg {
+  width: 12px;
+  height: 12px;
+}
+
+.podium__score {
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--primary);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.track-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 12px;
+}
+
+.track-card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 14px;
+}
+
+.track-card__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 10px;
+  flex-wrap: wrap;
+}
+
+@media (max-width: 768px) {
+  .field-row__track {
+    flex: 1 1 100% !important;
+  }
+
+  .track-grid {
+    grid-template-columns: 1fr;
+  }
+}

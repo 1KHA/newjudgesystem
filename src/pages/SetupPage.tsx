@@ -11,7 +11,9 @@ import {
 } from '../lib/supabaseService';
 import { RealtimeManager } from '../lib/realtimeManager';
 import { healthStore } from '../lib/connectionHealth';
-import type { Team, Question, QuestionBank, Judge } from '../types';
+import { trackOrder } from '../lib/teamImport';
+import TeamUploadPanel from '../components/TeamUploadPanel';
+import type { Team, Question, QuestionBank, Judge, SessionTeam } from '../types';
 import {
   ArrowRight, ArrowUp, ArrowDown, Users, HelpCircle, Scale, Check, CheckCheck, X,
   Plus, Minus, Pencil, Trash2, Save, Loader2, Link2, Copy, Clock, Play, UserRound,
@@ -34,8 +36,10 @@ export default function SetupPage() {
   const [teams, setTeams] = useState<Team[]>([]);
   const [selectedTeams, setSelectedTeams] = useState<string[]>([]);
   const [newTeamName, setNewTeamName] = useState<string>('');
+  const [newTeamTrack, setNewTeamTrack] = useState<string>('');
   const [editingTeamId, setEditingTeamId] = useState<string | null>(null);
   const [editingTeamName, setEditingTeamName] = useState<string>('');
+  const [editingTeamTrack, setEditingTeamTrack] = useState<string>('');
 
   // Step 2 — questions
   const [questionBanks, setQuestionBanks] = useState<QuestionBank[]>([]);
@@ -81,7 +85,16 @@ export default function SetupPage() {
       name: `judges-${sessionId}`,
       configure: (ch) => ch.on('postgres_changes',
         { event: '*', schema: 'public', table: 'judges', filter: `session_id=eq.${sessionId}` },
-        () => { healthStore.noteChannelEvent(`judges-${sessionId}`); loadJudges(sessionId); })
+        (payload) => {
+          healthStore.noteChannelEvent(`judges-${sessionId}`);
+          // Presence pings are UPDATEs: patch locally instead of refetching the whole list
+          if (payload.eventType === 'UPDATE') {
+            const row = payload.new as Judge;
+            setJudges((prev) => prev.map((j) => (j.id === row.id ? { ...j, ...row } : j)));
+          } else {
+            loadJudges(sessionId);
+          }
+        })
     }]);
     const poll = setInterval(() => loadJudges(sessionId), 5000);
 
@@ -116,16 +129,18 @@ export default function SetupPage() {
   // ---- Step 1: team management ----
 
   const handleAddTeam = async () => {
-    if (!newTeamName.trim()) {
+    const name = newTeamName.replace(/\s+/g, ' ').trim();
+    if (!name) {
       alert('يرجى إدخال اسم الفريق');
       return;
     }
-    if (teams.some(t => t.name === newTeamName.trim())) {
+    if (teams.some(t => t.name.toLowerCase() === name.toLowerCase())) {
       alert('اسم الفريق موجود بالفعل');
       return;
     }
     try {
-      const { error } = await supabase.from('teams').insert({ name: newTeamName.trim() });
+      const track = newTeamTrack.replace(/\s+/g, ' ').trim() || null;
+      const { error } = await supabase.from('teams').insert({ name, track, display_order: teams.length });
       if (error) throw error;
       setNewTeamName('');
       await loadInitialData();
@@ -135,20 +150,27 @@ export default function SetupPage() {
     }
   };
 
-  const handleEditTeam = async (teamId: string, newName: string) => {
-    if (!newName.trim()) {
+  const handleEditTeam = async (teamId: string, newName: string, newTrack: string) => {
+    const name = newName.replace(/\s+/g, ' ').trim();
+    if (!name) {
       alert('يرجى إدخال اسم الفريق');
       return;
     }
-    if (teams.some(t => t.id !== teamId && t.name === newName.trim())) {
+    if (teams.some(t => t.id !== teamId && t.name.toLowerCase() === name.toLowerCase())) {
       alert('اسم الفريق موجود بالفعل');
       return;
     }
+    const oldName = teams.find(t => t.id === teamId)?.name;
     try {
-      const { error } = await supabase.from('teams').update({ name: newName.trim() }).eq('id', teamId);
+      const track = newTrack.replace(/\s+/g, ' ').trim() || null;
+      const { error } = await supabase.from('teams').update({ name, track }).eq('id', teamId);
       if (error) throw error;
       setEditingTeamId(null);
       setEditingTeamName('');
+      setEditingTeamTrack('');
+      if (oldName && oldName !== name) {
+        setSelectedTeams(prev => prev.map(t => (t === oldName ? name : t)));
+      }
       await loadInitialData();
     } catch (error) {
       console.error('Error updating team:', error);
@@ -176,10 +198,11 @@ export default function SetupPage() {
     newTeams.splice(toIndex, 0, movedTeam);
     setTeams(newTeams);
     try {
-      const updates = newTeams.map((team, index) =>
-        supabase.from('teams').update({ display_order: index }).eq('id', team.id)
+      // One request for the whole new order (was one request per team)
+      const { error } = await supabase.from('teams').upsert(
+        newTeams.map((team, index) => ({ id: team.id, name: team.name, track: team.track ?? null, display_order: index }))
       );
-      await Promise.all(updates);
+      if (error) throw error;
     } catch (error) {
       console.error('Error saving team order:', error);
       alert('خطأ في حفظ ترتيب الفرق');
@@ -191,6 +214,24 @@ export default function SetupPage() {
     setSelectedTeams(prev =>
       prev.includes(teamName) ? prev.filter(t => t !== teamName) : [...prev, teamName]
     );
+  };
+
+  /** Tracks in list order ('' = teams without a track). */
+  const tracks = trackOrder(teams);
+  const namedTracks = tracks.filter(Boolean);
+  const teamsInTrack = (track: string) => teams.filter(t => (t.track ?? '') === track).map(t => t.name);
+
+  const toggleTrackSelection = (track: string) => {
+    const names = teamsInTrack(track);
+    const allSelected = names.every(n => selectedTeams.includes(n));
+    setSelectedTeams(prev => (allSelected
+      ? prev.filter(n => !names.includes(n))
+      : [...prev, ...names.filter(n => !prev.includes(n))]));
+  };
+
+  const handleTeamsUploaded = async (saved: SessionTeam[]) => {
+    await loadInitialData();
+    setSelectedTeams(saved.map(t => t.name));
   };
 
   // ---- Step 2: questions ----
@@ -312,7 +353,10 @@ export default function SetupPage() {
         session_id: newSessionId,
         host_token: crypto.randomUUID(),
         host_id: user.id,
-        teams: selectedTeams,
+        // Judging order = list order (file order after an upload), with each team's track
+        teams: teams
+          .filter(t => selectedTeams.includes(t.name))
+          .map(t => ({ name: t.name, track: t.track ?? null })),
         questionIds,
         total_points: 100
       });
@@ -405,12 +449,15 @@ export default function SetupPage() {
                 </span>
               )}
             </div>
-            <p className="card-desc">أضف الفرق المشاركة ثم حددها بالضغط عليها.</p>
+            <p className="card-desc">ارفع ملف الفرق مع مساراتها، أو أضف الفرق يدوياً، ثم حددها بالضغط عليها.</p>
+
+            {/* Upload teams + tracks from Excel */}
+            <TeamUploadPanel existingNames={teams.map(t => t.name)} onSaved={handleTeamsUploaded} />
 
             {/* Add Team Form */}
             <div className="panel panel--muted mb-5">
-              <label htmlFor="newTeamName">إضافة فريق جديد</label>
-              <div className="field-row">
+              <label htmlFor="newTeamName">إضافة فريق يدوياً</label>
+              <div className="field-row field-row--wrap">
                 <input
                   id="newTeamName"
                   type="text"
@@ -419,11 +466,24 @@ export default function SetupPage() {
                   onKeyDown={(e) => e.key === 'Enter' && handleAddTeam()}
                   placeholder="اسم الفريق"
                 />
+                <input
+                  id="newTeamTrack"
+                  type="text"
+                  list="trackOptions"
+                  value={newTeamTrack}
+                  onChange={(e) => setNewTeamTrack(e.target.value)}
+                  onKeyDown={(e) => e.key === 'Enter' && handleAddTeam()}
+                  placeholder="المسار"
+                  className="field-row__track"
+                />
                 <button className="btn btn-primary" onClick={handleAddTeam}>
                   <Plus />
                   إضافة
                 </button>
               </div>
+              <datalist id="trackOptions">
+                {namedTracks.map(t => <option key={t} value={t} />)}
+              </datalist>
             </div>
 
             {/* Bulk Actions */}
@@ -437,6 +497,27 @@ export default function SetupPage() {
                 إلغاء الكل
               </button>
             </div>
+
+            {/* Select by track */}
+            {namedTracks.length > 0 && (
+              <div className="track-chips mb-4">
+                <span className="text-xs text-secondary">تحديد حسب المسار:</span>
+                {tracks.map(track => {
+                  const names = teamsInTrack(track);
+                  const chosen = names.filter(n => selectedTeams.includes(n)).length;
+                  const all = chosen === names.length;
+                  return (
+                    <button
+                      key={track || '__none'}
+                      className={`track-chip ${all ? 'track-chip--on' : chosen ? 'track-chip--some' : ''}`}
+                      onClick={() => toggleTrackSelection(track)}
+                    >
+                      {track || 'بدون مسار'} <b>{chosen}/{names.length}</b>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
 
             {/* Teams Grid */}
             <div
@@ -453,7 +534,7 @@ export default function SetupPage() {
                 <div className="empty-state" style={{ gridColumn: '1 / -1' }}>
                   <Users />
                   <h3>لا توجد فرق بعد</h3>
-                  <p>أضف أول فريق من الحقل أعلاه</p>
+                  <p>ارفع ملف الفرق أو أضف أول فريق يدوياً</p>
                 </div>
               )}
               {teams.map((team, index) => {
@@ -480,7 +561,7 @@ export default function SetupPage() {
                           value={editingTeamName}
                           onChange={(e) => setEditingTeamName(e.target.value)}
                           onKeyDown={(e) => {
-                            if (e.key === 'Enter') handleEditTeam(team.id, editingTeamName);
+                            if (e.key === 'Enter') handleEditTeam(team.id, editingTeamName, editingTeamTrack);
                             if (e.key === 'Escape') { setEditingTeamId(null); setEditingTeamName(''); }
                           }}
                           onClick={(e) => e.stopPropagation()}
@@ -491,6 +572,24 @@ export default function SetupPage() {
                         <span className="team-tile__name">{team.name}</span>
                       )}
                     </div>
+                    {isEditing ? (
+                      <input
+                        type="text"
+                        list="trackOptions"
+                        value={editingTeamTrack}
+                        onChange={(e) => setEditingTeamTrack(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') handleEditTeam(team.id, editingTeamName, editingTeamTrack);
+                          if (e.key === 'Escape') { setEditingTeamId(null); setEditingTeamName(''); }
+                        }}
+                        onClick={(e) => e.stopPropagation()}
+                        placeholder="المسار"
+                        className="mb-2"
+                        style={{ padding: '4px 8px', fontSize: '13px' }}
+                      />
+                    ) : team.track ? (
+                      <div className="mb-2"><span className="track-badge">{team.track}</span></div>
+                    ) : null}
 
                     <div className="team-tile__actions" onClick={(e) => e.stopPropagation()}>
                       <div>
@@ -513,14 +612,14 @@ export default function SetupPage() {
                       <div>
                         {isEditing ? (
                           <>
-                            <button className="icon-btn icon-btn--success" onClick={() => handleEditTeam(team.id, editingTeamName)} title="حفظ" aria-label="حفظ"><Check /></button>
+                            <button className="icon-btn icon-btn--success" onClick={() => handleEditTeam(team.id, editingTeamName, editingTeamTrack)} title="حفظ" aria-label="حفظ"><Check /></button>
                             <button className="icon-btn icon-btn--danger" onClick={() => { setEditingTeamId(null); setEditingTeamName(''); }} title="إلغاء" aria-label="إلغاء"><X /></button>
                           </>
                         ) : (
                           <>
                             <button
                               className={`icon-btn ${isSelected ? 'icon-btn--on-primary' : ''}`}
-                              onClick={() => { setEditingTeamId(team.id); setEditingTeamName(team.name); }}
+                              onClick={() => { setEditingTeamId(team.id); setEditingTeamName(team.name); setEditingTeamTrack(team.track ?? ''); }}
                               title="تعديل"
                               aria-label="تعديل"
                             ><Pencil /></button>

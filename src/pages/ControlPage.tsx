@@ -15,6 +15,8 @@ import {
   getJudgesBySession, getTeamProgress, getTeamAnswers, getLeaderboard
 } from '../lib/supabaseService';
 import BrandHeader from '../components/BrandHeader';
+import TrackPodium from '../components/TrackPodium';
+import { trackOrder } from '../lib/teamImport';
 import LoadingScreen from '../components/LoadingScreen';
 import type { SessionDetail, Judge, JudgeProgress, TeamAnswerRow, LeaderboardEntry } from '../types';
 
@@ -55,6 +57,10 @@ export default function ControlPage() {
   const teams = session?.teams ?? [];
   const questions = session?.questions ?? [];
   const currentTeam = teams[currentTeamIndex] ?? null;
+  const teamTracks = session?.teamTracks ?? {};
+  const currentTrack = currentTeam ? teamTracks[currentTeam] ?? null : null;
+  const tracksInOrder = trackOrder(teams.map((t) => ({ track: teamTracks[t] })));
+  const hasTracks = tracksInOrder.some(Boolean);
   teamRef.current = currentTeam;
 
   // ---------------------------------------------------------------- loaders --
@@ -151,7 +157,17 @@ export default function ControlPage() {
         name: `judges-${sessionId}`,
         configure: (ch) => ch.on('postgres_changes',
           { event: '*', schema: 'public', table: 'judges', filter: `session_id=eq.${sessionId}` },
-          () => { healthStore.noteChannelEvent(`judges-${sessionId}`); void loadJudges(); })
+          (payload) => {
+            healthStore.noteChannelEvent(`judges-${sessionId}`);
+            // Presence pings (every judge, every minute) are UPDATEs: patch the row
+            // locally instead of refetching the whole judge list each time
+            if (payload.eventType === 'UPDATE') {
+              const row = payload.new as Judge;
+              setJudges((prev) => prev.map((j) => (j.id === row.id ? { ...j, ...row } : j)));
+            } else {
+              void loadJudges();
+            }
+          })
       },
       {
         name: `answers-${sessionId}`,
@@ -205,18 +221,44 @@ export default function ControlPage() {
     }
   };
 
-  const handlePreviousTeam = () => goToTeam(currentTeamIndex > 0 ? currentTeamIndex - 1 : teams.length - 1);
-  const handleNextTeam = () => goToTeam(currentTeamIndex < teams.length - 1 ? currentTeamIndex + 1 : 0);
+  /** Judges who have not answered every question for the team on screen. */
+  const unfinishedJudges = () => {
+    const total = questions.length;
+    if (!total) return [];
+    return judges.filter((j) => (progress[j.id]?.answered ?? 0) < total);
+  };
+
+  /** Ask before leaving a team that some judges have not finished: they will never see it again. */
+  const confirmLeaveTeam = (action: string) => {
+    const left = unfinishedJudges();
+    if (left.length === 0) return true;
+    const names = left.slice(0, 6).map((j) => j.name).join('، ');
+    return confirm(
+      `لم يكمل ${left.length} من ${judges.length} محكمين تقييم "${currentTeam}"` +
+      `${names ? `:\n${names}${left.length > 6 ? '…' : ''}` : ''}\n\n` +
+      `بعد ${action} لن يظهر هذا الفريق لهم مرة أخرى. هل تريد المتابعة؟`
+    );
+  };
+
+  const handlePreviousTeam = () => {
+    if (!confirmLeaveTeam('الانتقال')) return;
+    goToTeam(currentTeamIndex > 0 ? currentTeamIndex - 1 : teams.length - 1);
+  };
+  const handleNextTeam = () => {
+    if (!confirmLeaveTeam('الانتقال')) return;
+    goToTeam(currentTeamIndex < teams.length - 1 ? currentTeamIndex + 1 : 0);
+  };
   const handleResend = () => currentTeam && announceTeam(currentTeam);
 
   const handleEndSession = async () => {
-    if (!confirm('هل أنت متأكد من إنهاء الجلسة؟ سيتم حفظ النتائج النهائية.')) return;
+    if (!confirmLeaveTeam('إنهاء الجلسة')) return;
+    if (!confirm('هل أنت متأكد من إنهاء الجلسة؟ سيتم حفظ النتائج النهائية وإعلان الأوائل.')) return;
     setEnding(true);
     try {
       const n = await finishSession(sessionId);
       await announceTeam(currentTeam ?? '', 'completed');
       alert(`تم إنهاء الجلسة وحفظ نتائج ${n} فريق بنجاح`);
-      navigate('/host', { replace: true });
+      navigate(`/results?session=${encodeURIComponent(sessionId)}`, { replace: true });
     } catch (e) {
       console.error('Error ending session:', e);
       alert('خطأ في إنهاء الجلسة: ' + (e as Error).message);
@@ -308,6 +350,7 @@ export default function ControlPage() {
             <div className="team-display">
               <div className="team-display__label">يتم تحكيم</div>
               <div className="team-name">{currentTeam ?? 'لا يوجد'}</div>
+              {currentTrack && <div className="team-display__track">المسار: <b>{currentTrack}</b></div>}
             </div>
             <p className="card-desc">
               {totalQuestions} سؤال لكل فريق. عند الانتقال لفريق يصل للمحكمين فوراً، ومن ينقطع اتصاله يتزامن تلقائياً.
@@ -422,6 +465,18 @@ export default function ControlPage() {
             </div>
           </div>
 
+          {/* Top 3 overall and per track */}
+          <div className="card span-2">
+            <div className="card-header">
+              <div className="card-title">
+                <div className="card-icon"><Trophy /></div>
+                <span>{hasTracks ? 'الأوائل حسب المسار' : 'الأوائل'}</span>
+              </div>
+              <span className="text-xs text-secondary">يتحدث تلقائياً مع كل تقييم</span>
+            </div>
+            <TrackPodium leaderboard={leaderboard} trackOrder={tracksInOrder} currentTeam={currentTeam} />
+          </div>
+
           {/* Leaderboard */}
           <div className="card span-2">
             <div className="card-header">
@@ -437,6 +492,8 @@ export default function ControlPage() {
                   <tr>
                     <th style={{ width: '56px' }}>#</th>
                     <th>الفريق</th>
+                    {hasTracks && <th>المسار</th>}
+                    {hasTracks && <th className="num">ترتيبه في المسار</th>}
                     <th className="num">الإجابات</th>
                     <th className="num">المحكمون</th>
                     <th className="num">إجمالي النقاط</th>
@@ -444,12 +501,14 @@ export default function ControlPage() {
                 </thead>
                 <tbody>
                   {leaderboard.length === 0 ? (
-                    <tr><td colSpan={5} className="empty-state">لا توجد نتائج بعد</td></tr>
+                    <tr><td colSpan={hasTracks ? 7 : 5} className="empty-state">لا توجد نتائج بعد</td></tr>
                   ) : (
-                    leaderboard.map((entry, idx) => (
+                    leaderboard.map((entry) => (
                       <tr key={entry.teamName} style={entry.teamName === currentTeam ? { background: 'var(--primary-tint)' } : undefined}>
-                        <td><span className={`rank-badge rank-badge--${idx + 1}`}>{idx + 1}</span></td>
+                        <td><span className={`rank-badge rank-badge--${entry.overallRank}`}>{entry.overallRank}</span></td>
                         <td className="fw-600">{entry.teamName}</td>
+                        {hasTracks && <td>{entry.track ? <span className="track-badge track-badge--sm">{entry.track}</span> : '—'}</td>}
+                        {hasTracks && <td className="num text-secondary">{entry.trackRank}</td>}
                         <td className="num text-secondary">{entry.answerCount}</td>
                         <td className="num text-secondary">{entry.judgeCount}</td>
                         <td className="num fw-700 text-primary">{entry.totalPoints.toFixed(2)}</td>

@@ -1,14 +1,18 @@
-import { useState, useEffect, useCallback } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useState, useEffect, useCallback, Fragment } from 'react';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
   ArrowRight, ClipboardList, Calendar, ChevronDown, Trophy, BarChart3, Users, Calculator, Loader2
 } from 'lucide-react';
-import { getAllSessions, getLeaderboard, getJudgesBySession, getTeamAnswers } from '../lib/supabaseService';
+import { getAllSessions, getLeaderboard, getJudgesBySession, getTeamAnswers, getSessionTeams } from '../lib/supabaseService';
+import { trackOrder } from '../lib/teamImport';
 import BrandHeader from '../components/BrandHeader';
+import TrackPodium from '../components/TrackPodium';
 import type { SessionSummary, LeaderboardEntry, TeamAnswerRow } from '../types';
 
 interface SessionData {
   leaderboard: LeaderboardEntry[];
+  /** Track names in the session's team order */
+  tracks: string[];
   judgeCount: number;
   loading: boolean;
 }
@@ -22,6 +26,8 @@ interface SessionData {
  */
 export default function ResultsPage() {
   const navigate = useNavigate();
+  const [params] = useSearchParams();
+  const focusSession = params.get('session');
   const [sessions, setSessions] = useState<SessionSummary[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -44,15 +50,25 @@ export default function ResultsPage() {
   }, []);
 
   const loadSession = useCallback(async (sessionId: string) => {
-    setData((d) => ({ ...d, [sessionId]: { leaderboard: [], judgeCount: 0, loading: true } }));
+    setData((d) => ({ ...d, [sessionId]: { leaderboard: [], tracks: [], judgeCount: 0, loading: true } }));
     try {
-      const [leaderboard, judges] = await Promise.all([getLeaderboard(sessionId), getJudgesBySession(sessionId)]);
-      setData((d) => ({ ...d, [sessionId]: { leaderboard, judgeCount: judges.length, loading: false } }));
+      const [leaderboard, judges, teams] = await Promise.all([
+        getLeaderboard(sessionId), getJudgesBySession(sessionId), getSessionTeams(sessionId)
+      ]);
+      setData((d) => ({ ...d, [sessionId]: { leaderboard, tracks: trackOrder(teams), judgeCount: judges.length, loading: false } }));
     } catch (e) {
       console.error('Error loading session results:', e);
-      setData((d) => ({ ...d, [sessionId]: { leaderboard: [], judgeCount: 0, loading: false } }));
+      setData((d) => ({ ...d, [sessionId]: { leaderboard: [], tracks: [], judgeCount: 0, loading: false } }));
     }
   }, []);
+
+  // Opened from "end session" on the control page: show that session's results right away
+  useEffect(() => {
+    if (!focusSession || !sessions.some((x) => x.session_id === focusSession)) return;
+    setExpanded((prev) => (prev.has(focusSession) ? prev : new Set(prev).add(focusSession)));
+    void loadSession(focusSession);
+    requestAnimationFrame(() => document.getElementById(`session-${focusSession}`)?.scrollIntoView({ block: 'start' }));
+  }, [focusSession, sessions, loadSession]);
 
   const toggleSession = (sessionId: string) => {
     setExpanded((prev) => {
@@ -137,7 +153,7 @@ export default function ResultsPage() {
           const totalAnswers = lb.reduce((s, t) => s + t.answerCount, 0);
 
           return (
-            <div key={session.session_id} className="card mb-5">
+            <div key={session.session_id} id={`session-${session.session_id}`} className="card mb-5">
               <div
                 className="session-toggle"
                 onClick={() => toggleSession(session.session_id)}
@@ -182,19 +198,8 @@ export default function ResultsPage() {
                     </div>
                   ) : (
                     <>
-                      <div className="top-teams">
-                        <h3><Trophy /> أفضل 5 فرق</h3>
-                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '12px' }}>
-                          {lb.slice(0, 5).map((team, index) => (
-                            <div key={team.teamName} className={`top-team top-team--${index + 1}`}>
-                              <div className="top-team__bar" />
-                              <span className={`rank-badge rank-badge--${index + 1}`}>{index + 1}</span>
-                              <div className="top-team__name">{team.teamName}</div>
-                              <div className="top-team__score">{team.totalPoints.toFixed(2)}</div>
-                              <div className="top-team__unit">نقطة</div>
-                            </div>
-                          ))}
-                        </div>
+                      <div className="panel mb-5">
+                        <TrackPodium leaderboard={lb} trackOrder={d.tracks} final={session.status === 'completed'} />
                       </div>
 
                       <div className="panel panel--tint mb-5">
@@ -237,24 +242,25 @@ export default function ResultsPage() {
                             <tr>
                               <th style={{ width: '56px' }}>#</th>
                               <th>الفريق</th>
+                              {d.tracks.some(Boolean) && <th>المسار</th>}
+                              {d.tracks.some(Boolean) && <th className="num">ترتيبه في المسار</th>}
                               <th className="num">الإجابات</th>
                               <th className="num">المحكمون</th>
                               <th className="num">النقاط</th>
                             </tr>
                           </thead>
                           <tbody>
-                            {lb.map((team, index) => {
+                            {lb.map((team) => {
                               const key = `${session.session_id}|${team.teamName}`;
                               const isOpen = openTeam[session.session_id] === team.teamName;
                               const rows = teamRows[key];
                               return (
-                                <>
+                                <Fragment key={team.teamName}>
                                   <tr
-                                    key={team.teamName}
                                     onClick={() => toggleTeam(session.session_id, team.teamName)}
                                     style={{ cursor: 'pointer', background: isOpen ? 'var(--primary-tint)' : undefined }}
                                   >
-                                    <td><span className={`rank-badge rank-badge--${index + 1}`}>{index + 1}</span></td>
+                                    <td><span className={`rank-badge rank-badge--${team.overallRank}`}>{team.overallRank}</span></td>
                                     <td className="fw-600">
                                       <span className="flex items-center gap-2">
                                         <Users size={16} className="text-secondary" />
@@ -262,13 +268,15 @@ export default function ResultsPage() {
                                         <ChevronDown size={14} className={`chevron ${isOpen ? 'chevron--open' : ''}`} />
                                       </span>
                                     </td>
+                                    {d.tracks.some(Boolean) && <td>{team.track ? <span className="track-badge track-badge--sm">{team.track}</span> : '—'}</td>}
+                                    {d.tracks.some(Boolean) && <td className="num text-secondary">{team.trackRank}</td>}
                                     <td className="num text-secondary">{team.answerCount}</td>
                                     <td className="num text-secondary">{team.judgeCount}</td>
                                     <td className="num fw-700 text-primary">{team.totalPoints.toFixed(2)}</td>
                                   </tr>
                                   {isOpen && (
-                                    <tr key={`${team.teamName}-detail`}>
-                                      <td colSpan={5} style={{ padding: 0, background: 'var(--white)' }}>
+                                    <tr>
+                                      <td colSpan={d.tracks.some(Boolean) ? 7 : 5} style={{ padding: 0, background: 'var(--white)' }}>
                                         {rows === 'loading' || !rows ? (
                                           <div className="loading-screen" style={{ minHeight: '80px' }}>
                                             <Loader2 className="spin" />
@@ -304,7 +312,7 @@ export default function ResultsPage() {
                                       </td>
                                     </tr>
                                   )}
-                                </>
+                                </Fragment>
                               );
                             })}
                           </tbody>

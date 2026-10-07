@@ -17,7 +17,12 @@ import { useConnectionHealth } from '../hooks/useConnectionHealth';
 import BrandLockup, { BrandLogo } from '../components/BrandLockup';
 import type { Question, SessionDetail, Session, PendingAnswer } from '../types';
 
-/** Poll interval for team/status changes; the safety net behind the two realtime paths. */
+/**
+ * Session check interval while the live connection is DOWN. While it is up,
+ * team changes arrive by broadcast/database event in ~0.3 s and the connection
+ * watchdog still checks the session every 15 s, so the 4 s check is skipped.
+ * This cuts each iPad's requests by about 4x without slowing team changes.
+ */
 const POLL_MS = 4_000;
 /** How often queued answers are retried while any are pending. */
 const QUEUE_RETRY_MS = 8_000;
@@ -220,13 +225,17 @@ export default function JudgePage() {
       }
     ]);
 
-    if (currentTeamRef.current) void loadMyAnswers(currentTeamRef.current);
-    void flush();
+    // Send anything still waiting from before a reload FIRST, then load the saved
+    // answers, so an answer that was mid-send is never shown as unanswered
+    void flush().then(() => { if (currentTeamRef.current) void loadMyAnswers(currentTeamRef.current); });
 
-    const pollTimer = setInterval(() => { poll().catch(() => undefined); }, POLL_MS);
+    const pollTimer = setInterval(() => {
+      if (healthStore.getState().status === 'connected') return; // live connection covers it
+      poll().catch(() => undefined);
+    }, POLL_MS);
     const queueTimer = setInterval(() => { if (queue.size > 0) void flush(); }, QUEUE_RETRY_MS);
     const presenceTimer = setInterval(() => { touchJudge(judge.id).catch(() => undefined); }, PRESENCE_MS);
-    const onOnline = () => { void flush(); };
+    const onOnline = () => { queue.resetBackoff(); void flush(); };
     window.addEventListener('online', onOnline);
     window.addEventListener('focus', onOnline);
 
@@ -244,7 +253,33 @@ export default function JudgePage() {
     };
   }, [phase, sessionId, judge, applySessionState, loadMyAnswers]);
 
+  // Session ended while answers were still waiting on this iPad (it was offline
+  // when the host pressed "end", or the judge reopens the link afterwards):
+  // keep sending them until none are left.
+  useEffect(() => {
+    if (phase !== 'ended' || !sessionId) return;
+    const stored = judgeRef.current ?? readStoredJudge(sessionId);
+    if (!stored) return;
+    const queue = new OfflineAnswerQueue(`answerQueue_${sessionId}_${stored.id}`, browserStorage());
+    if (queue.size === 0) return;
+    setPendingCount(queue.size);
+    const unsub = queue.subscribe(() => setPendingCount(queue.size));
+    const drain = () => { if (queue.size > 0) void queue.flush(sendPending).catch(() => undefined); };
+    const onOnline = () => { queue.resetBackoff(); drain(); };
+    drain();
+    const timer = setInterval(drain, QUEUE_RETRY_MS);
+    window.addEventListener('online', onOnline);
+    window.addEventListener('focus', onOnline);
+    return () => {
+      clearInterval(timer);
+      unsub();
+      window.removeEventListener('online', onOnline);
+      window.removeEventListener('focus', onOnline);
+    };
+  }, [phase, sessionId]);
+
   const allAnswered = questions.length > 0 && questions.every((q) => selectedAnswers[q.id]);
+  const currentTrack = currentTeam ? session?.teamTracks?.[currentTeam] ?? null : null;
 
   // -------------------------------------------------------------- actions --
 
@@ -296,7 +331,9 @@ export default function JudgePage() {
             {ended ? <CheckCircle2 /> : <Link2Off />}
             <h3>{ended ? 'انتهت جلسة التحكيم' : 'رابط الجلسة غير صالح'}</h3>
             <p>
-              {ended
+              {ended && pendingCount > 0
+                ? `جاري إرسال ${pendingCount} إجابة متبقية من هذا الجهاز. أبقِ الصفحة مفتوحة حتى يكتمل الإرسال.`
+                : ended
                 ? 'شكراً لمشاركتك. تم حفظ جميع إجاباتك.'
                 : 'الانضمام للتحكيم يتم فقط عبر الرابط الخاص الذي يرسله المضيف لكل جلسة.'}
             </p>
@@ -389,6 +426,7 @@ export default function JudgePage() {
           <div className="judge-team-banner">
             <h2>يتم تحكيم</h2>
             <div className="team-name">{currentTeam ?? 'بانتظار المضيف'}</div>
+            {currentTrack && <div className="judge-team-banner__track">المسار: <b>{currentTrack}</b></div>}
           </div>
 
           {!online && (

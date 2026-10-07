@@ -88,3 +88,13 @@ test('works without storage (memory only)', async () => {
   await q.flush(async () => {});
   assert.equal(q.size, 0);
 });
+
+test('resetBackoff lets a flush run immediately after coming back online', async () => {
+  const q = new OfflineAnswerQueue('k', memStorage());
+  q.enqueue(ans('t1', 'q1', 'A'));
+  const fail = async () => { throw new Error('offline'); };
+  await q.flush(fail); await q.flush(fail); await q.flush(fail);
+  assert.equal((await q.flush(async () => {})).sent, 0, 'still in backoff');
+  q.resetBackoff();
+  assert.equal((await q.flush(async () => {})).sent, 1, 'sent right after reset');
+});

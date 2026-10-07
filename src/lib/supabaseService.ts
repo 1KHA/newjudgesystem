@@ -1,6 +1,6 @@
 import { supabase } from './supabase';
 import type {
-  Team, Question, QuestionBank, Judge, Session, SessionDetail, SessionSummary,
+  Team, Question, QuestionBank, Judge, Session, SessionDetail, SessionSummary, SessionTeam,
   Answer, SessionResult, LeaderboardEntry, JudgeProgress, TeamAnswerRow
 } from '../types';
 
@@ -25,6 +25,21 @@ export const getTeams = async (): Promise<Team[]> => {
     .select('*')
     .order('display_order', { ascending: true })
     .order('name', { ascending: true });
+  if (error) throw error;
+  return data || [];
+};
+
+/**
+ * Save teams from an uploaded file in ONE request.
+ * Existing names are updated (track + order), new names are inserted.
+ * `display_order` follows the file order, which becomes the judging order.
+ */
+export const upsertTeams = async (rows: SessionTeam[]): Promise<Team[]> => {
+  const payload = rows.map((t, i) => ({ name: t.name, track: t.track, display_order: i }));
+  const { data, error } = await supabase
+    .from('teams')
+    .upsert(payload, { onConflict: 'name' })
+    .select();
   if (error) throw error;
   return data || [];
 };
@@ -60,21 +75,21 @@ export const createSession = async (input: {
   session_id: string;
   host_token: string;
   host_id?: string;
-  teams: string[];
+  teams: SessionTeam[];
   questionIds: string[];
   total_points: number;
 }): Promise<Session> => {
   const { teams, questionIds, ...row } = input;
   const { data: session, error } = await supabase
     .from('sessions')
-    .insert({ ...row, status: 'active', current_team_index: 0, current_team_id: teams[0] ?? null })
+    .insert({ ...row, status: 'active', current_team_index: 0, current_team_id: teams[0]?.name ?? null })
     .select(SESSION_COLUMNS)
     .single();
   if (error) throw error;
 
   try {
     const { error: tErr } = await supabase.from('session_teams').insert(
-      teams.map((name, position) => ({ session_id: session.session_id, name, position }))
+      teams.map((t, position) => ({ session_id: session.session_id, name: t.name, track: t.track, position }))
     );
     if (tErr) throw tErr;
 
@@ -132,17 +147,23 @@ export const getSessionDetail = async (sessionId: string): Promise<SessionDetail
   const session = await getSession(sessionId);
   if (!session) return null;
   const [teams, questions] = await Promise.all([getSessionTeams(sessionId), getSessionQuestions(sessionId)]);
-  return { ...session, teams, questions };
+  return {
+    ...session,
+    teams: teams.map((t) => t.name),
+    teamTracks: Object.fromEntries(teams.map((t) => [t.name, t.track])),
+    questions,
+  };
 };
 
-export const getSessionTeams = async (sessionId: string): Promise<string[]> => {
+/** Ordered teams of a session with their tracks (loaded once per page; teams never change mid-session). */
+export const getSessionTeams = async (sessionId: string): Promise<SessionTeam[]> => {
   const { data, error } = await supabase
     .from('session_teams')
-    .select('name, position')
+    .select('name, track, position')
     .eq('session_id', sessionId)
     .order('position');
   if (error) throw error;
-  return (data || []).map((t) => t.name);
+  return (data || []).map((t) => ({ name: t.name, track: t.track ?? null }));
 };
 
 export const getSessionQuestions = async (sessionId: string): Promise<Question[]> => {
@@ -240,6 +261,10 @@ export const touchJudge = async (judgeId: string): Promise<void> => {
 
 // -------------------------------------------------------------- Answers ----
 
+/** Abort a write that has not answered within this time, so one stuck request
+ *  cannot hold back every later answer in the judge's queue. */
+const ANSWER_TIMEOUT_MS = 10_000;
+
 /**
  * Idempotent write: one row per (session, team, judge, question).
  * Re-sending the same answer (offline replay, retry) is harmless.
@@ -252,15 +277,22 @@ export const upsertAnswer = async (answerData: {
   judge_id: string;
   session_id: string;
 }): Promise<Answer> => {
-  const { data, error } = await supabase
-    .from('answers')
-    .upsert({ ...answerData, updated_at: new Date().toISOString() }, {
-      onConflict: 'session_id,team_id,judge_id,question_id'
-    })
-    .select()
-    .single();
-  if (error) throw error;
-  return data;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), ANSWER_TIMEOUT_MS);
+  try {
+    const { data, error } = await supabase
+      .from('answers')
+      .upsert({ ...answerData, updated_at: new Date().toISOString() }, {
+        onConflict: 'session_id,team_id,judge_id,question_id'
+      })
+      .select()
+      .abortSignal(controller.signal)
+      .single();
+    if (error) throw error;
+    return data;
+  } finally {
+    clearTimeout(timer);
+  }
 };
 
 /** A judge's own answers for one team (bounded by question count). */
@@ -321,13 +353,18 @@ export const getTeamProgress = async (sessionId: string, teamId: string): Promis
 export const getLeaderboard = async (sessionId: string): Promise<LeaderboardEntry[]> => {
   const { data, error } = await supabase.rpc('session_leaderboard', { p_session_id: sessionId });
   if (error) throw error;
-  return ((data || []) as { team_id: string; total_points: number; answer_count: number; judge_count: number }[])
-    .map((r) => ({
-      teamName: r.team_id,
-      totalPoints: Number(r.total_points),
-      answerCount: Number(r.answer_count),
-      judgeCount: Number(r.judge_count)
-    }));
+  return ((data || []) as {
+    team_id: string; track: string | null; total_points: number; answer_count: number;
+    judge_count: number; overall_rank: number; track_rank: number;
+  }[]).map((r) => ({
+    teamName: r.team_id,
+    track: r.track ?? null,
+    totalPoints: Number(r.total_points),
+    answerCount: Number(r.answer_count),
+    judgeCount: Number(r.judge_count),
+    overallRank: Number(r.overall_rank),
+    trackRank: Number(r.track_rank)
+  }));
 };
 
 // ------------------------------------------------------------- Results ----

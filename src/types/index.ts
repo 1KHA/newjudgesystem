@@ -1,8 +1,15 @@
 export interface Team {
   id: string;
   name: string;
+  track?: string | null;
   display_order?: number;
   created_at?: string;
+}
+
+/** A team as it is placed into a session (name + track snapshot). */
+export interface SessionTeam {
+  name: string;
+  track: string | null;
 }
 
 export interface QuestionBank {
@@ -56,6 +63,8 @@ export interface Session {
 /** Session plus its ordered teams and questions (joined from session_teams / session_questions). */
 export interface SessionDetail extends Session {
   teams: string[];
+  /** team name -> track (null when the team has no track) */
+  teamTracks: Record<string, string | null>;
   questions: Question[];
 }
 
@@ -80,9 +89,12 @@ export interface SessionResult {
   id: string;
   session_id: string;
   team_id: string;
+  track?: string | null;
   total_points: number;
   answer_count: number;
   judge_count: number;
+  overall_rank?: number | null;
+  track_rank?: number | null;
   created_at?: string;
   updated_at?: string;
 }
@@ -90,9 +102,14 @@ export interface SessionResult {
 /** One row of the server-side `session_leaderboard()` aggregate. */
 export interface LeaderboardEntry {
   teamName: string;
+  track: string | null;
   totalPoints: number;
   answerCount: number;
   judgeCount: number;
+  /** 1-based place among all teams; tied teams share a place */
+  overallRank: number;
+  /** 1-based place within the team's track; tied teams share a place */
+  trackRank: number;
 }
 
 /** Per-judge progress for the team currently being judged. */

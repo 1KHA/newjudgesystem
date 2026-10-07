@@ -133,6 +133,15 @@ export class OfflineAnswerQueue {
     this.nextRetryAt = 0;
     this.save();
   }
+
+  /**
+   * Drop any retry backoff. Call when the device reports it is back online or
+   * the page regains focus: the reason for the earlier failures is likely gone,
+   * so waiting (up to 30 s) would only delay answers.
+   */
+  resetBackoff() {
+    this.nextRetryAt = 0;
+  }
 }
 
 /** localStorage when available (browser), otherwise memory-only. */
