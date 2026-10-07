@@ -8,6 +8,7 @@ import {
   getQuestions,
   createQuestionBank,
   createSession,
+  startSession,
   getJudgesBySession
 } from '../lib/supabaseService';
 import { RealtimeManager } from '../lib/realtimeManager';
@@ -63,6 +64,7 @@ export default function SetupPage() {
   const [sessionId, setSessionId] = useState<string>('');
   const [judges, setJudges] = useState<Judge[]>([]);
   const [creating, setCreating] = useState(false);
+  const [starting, setStarting] = useState(false);
   const [copied, setCopied] = useState(false);
 
   const step1Done = selectedTeams.length > 0;
@@ -351,7 +353,17 @@ export default function SetupPage() {
     }
   };
 
-  const handleStartJudging = () => {
+  // Judges who joined wait on a "waiting" screen until this sets the first team.
+  // If it fails, the control page shows the same start button to retry.
+  const handleStartJudging = async () => {
+    setStarting(true);
+    try {
+      await startSession(sessionId);
+    } catch (e) {
+      console.error('Error starting session:', e);
+    } finally {
+      setStarting(false);
+    }
     navigate(`/host/${sessionId}/control`);
   };
 
@@ -792,13 +804,17 @@ export default function SetupPage() {
                     )}
                   </ul>
 
-                  <button className="btn btn-primary btn-lg btn-block mt-3" onClick={handleStartJudging}>
-                    <Play />
+                  <button className="btn btn-primary btn-lg btn-block mt-3" onClick={handleStartJudging} disabled={starting}>
+                    {starting ? <Loader2 className="spin" /> : <Play />}
                     بدء جلسة التحكيم {judges.length > 0 ? `(${judges.length} محكم)` : ''}
                   </button>
-                  {judges.length === 0 && (
+                  {judges.length === 0 ? (
                     <p className="text-sm text-warning text-center mt-2 mb-0">
                       يمكنك البدء الآن والمحكمون ينضمون لاحقًا، لكن يُفضّل انتظار انضمامهم
+                    </p>
+                  ) : (
+                    <p className="text-sm text-secondary text-center mt-2 mb-0">
+                      المحكمون في شاشة الانتظار، ولن يظهر لهم الفريق الأول حتى تضغط بدء
                     </p>
                   )}
                 </div>

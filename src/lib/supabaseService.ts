@@ -110,6 +110,8 @@ const SESSION_COLUMNS = 'id, name, session_id, host_token, host_id, current_team
 /**
  * Creates a session together with its team list and question list.
  * Rolls the session row back if either child insert fails.
+ * The session starts with no current team: judges who join wait until the
+ * host starts judging (startSession).
  */
 export const createSession = async (input: {
   name: string;
@@ -123,7 +125,7 @@ export const createSession = async (input: {
   const { teams, questionIds, ...row } = input;
   const { data: session, error } = await supabase
     .from('sessions')
-    .insert({ ...row, status: 'active', current_team_index: 0, current_team_id: teams[0]?.name ?? null })
+    .insert({ ...row, status: 'active', current_team_index: 0, current_team_id: null })
     .select(SESSION_COLUMNS)
     .single();
   if (error) throw error;
@@ -226,6 +228,32 @@ export const setCurrentTeam = async (sessionId: string, index: number, team: str
     .update({ current_team_index: index, current_team_id: team, updated_at: new Date().toISOString() })
     .eq('session_id', sessionId);
   if (error) throw error;
+};
+
+/**
+ * Starts judging: the first team becomes the current team. Only acts on a
+ * session that has not started yet, so pressing start again (another tab, a
+ * retry) never sends a running session back to the first team.
+ * Returns the first team, or null when the session was already started.
+ */
+export const startSession = async (sessionId: string): Promise<string | null> => {
+  const { data: first, error: tErr } = await supabase
+    .from('session_teams')
+    .select('name')
+    .eq('session_id', sessionId)
+    .order('position')
+    .limit(1)
+    .maybeSingle();
+  if (tErr) throw tErr;
+  if (!first) return null;
+  const { data, error } = await supabase
+    .from('sessions')
+    .update({ current_team_index: 0, current_team_id: first.name, updated_at: new Date().toISOString() })
+    .eq('session_id', sessionId)
+    .is('current_team_id', null)
+    .select('session_id');
+  if (error) throw error;
+  return data && data.length > 0 ? first.name : null;
 };
 
 /** Finalises a session server-side: totals into session_results, status = completed. */

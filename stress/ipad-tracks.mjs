@@ -49,7 +49,9 @@ const created = { sessions: [], bankId: null };
 
 // ------------------------------------------------------------------ plan --
 
-const TRACKS = ['الصحة', 'التعليم', 'الاستدامة', 'التقنية'];
+// Track names carry the run id: real teams in the master list often use the
+// template's track names, and selecting a whole track would pick them up too.
+const TRACKS = ['الصحة', 'التعليم', 'الاستدامة', 'التقنية'].map((t) => `${t} ${RUN.slice(-4)}`);
 // Sum of the 5 answer weights (5..25) each judge gives a team, per track, in file order.
 // Track 1 has a tie for 3rd place (21, 21). Overall: 25 (T1), 24 (T2), 23 (T1).
 const PLAN = [
@@ -89,8 +91,8 @@ function makeFiles() {
   const spec = {
     main: TEAMS.map((t) => [t.name, t.track]),
     // second upload: same teams, one moved to another track
-    changed: TEAMS.map((t, i) => [t.name, i === 0 ? 'التقنية' : t.track]),
-    bad: [[`${TAG} خطأ 1`, 'الصحة'], [`${TAG} خطأ 1`, 'التعليم'], [`${TAG} خطأ 2`, '']],
+    changed: TEAMS.map((t, i) => [t.name, i === 0 ? TRACKS[3] : t.track]),
+    bad: [[`${TAG} خطأ 1`, TRACKS[0]], [`${TAG} خطأ 1`, TRACKS[1]], [`${TAG} خطأ 2`, '']],
   };
   writeFileSync(`${OUT}/spec.json`, JSON.stringify(spec));
   execFileSync(py, ['-c', `
@@ -104,7 +106,7 @@ for key in ('main', 'changed', 'bad'):
     wb.save('${OUT}/teams-' + key + '.xlsx')
 `]);
   // CSV variant (UTF-8 with BOM, like Excel's "CSV UTF-8")
-  const csvTeams = [[`${TAG} csv أ`, 'الصحة'], [`${TAG} csv "ب"`, 'التعليم'], [`${TAG} csv، ج`, 'التقنية']];
+  const csvTeams = [[`${TAG} csv أ`, TRACKS[0]], [`${TAG} csv "ب"`, TRACKS[1]], [`${TAG} csv، ج`, TRACKS[3]]];
   writeFileSync(`${OUT}/teams.csv`, '﻿اسم الفريق,المسار\r\n' + csvTeams.map(([n, t]) => `"${n.replace(/"/g, '""')}",${t}`).join('\r\n') + '\r\n');
   return { csvTeams };
 }
@@ -208,7 +210,7 @@ async function main() {
   record('U03', 'CSV (UTF-8, quotes, Arabic comma) uploads with tracks', csvRows.length === 3 && csvRows.every((r, i) => r.track === csvTeams[i][1]),
     { saved: csvRows.map((r) => `${r.name.replace(TAG, '').trim()} | ${r.track}`) });
   // U03b: same names with the Latin prefix in lower case -> must update, not add twins
-  writeFileSync(`${OUT}/teams-case.csv`, '\uFEFFاسم الفريق,المسار\r\n' + csvTeams.map(([n]) => `"${n.replace(TAG, TAG.toLowerCase()).replace(/"/g, '""')}",التقنية`).join('\r\n') + '\r\n');
+  writeFileSync(`${OUT}/teams-case.csv`, '\uFEFFاسم الفريق,المسار\r\n' + csvTeams.map(([n]) => `"${n.replace(TAG, TAG.toLowerCase()).replace(/"/g, '""')}",${TRACKS[3]}`).join('\r\n') + '\r\n');
   await A.setInputFiles('#teamsFile', `${OUT}/teams-case.csv`);
   await A.locator('.upload-panel button:has-text("حفظ 3 فريق")').waitFor({ timeout: 10000 });
   const caseLabels = await A.locator('.upload-preview__table tbody .badge').allInnerTexts();
@@ -216,7 +218,7 @@ async function main() {
   await A.locator('.upload-panel .alert-success').waitFor({ timeout: 15000 });
   const caseRows = (await db.query('select name, track from teams where lower(name) = any($1)', [csvTeams.map((t) => t[0].toLowerCase())])).rows;
   record('U03b', 'Same names in a different Latin letter case update the existing teams (no twins)',
-    caseRows.length === 3 && caseRows.every((r) => r.track === 'التقنية' && r.name.startsWith(TAG)) && caseLabels.every((l) => l === 'تحديث'),
+    caseRows.length === 3 && caseRows.every((r) => r.track === TRACKS[3] && r.name.startsWith(TAG)) && caseLabels.every((l) => l === 'تحديث'),
     { rowsLabelled: [...new Set(caseLabels)], teamsInDb: caseRows.length, keptOriginalSpelling: caseRows.every((r) => r.name.startsWith(TAG)) });
   // remove the CSV teams so each track holds exactly the 10 teams of the main file
   await db.query('delete from teams where name = any($1)', [csvTeams.map((t) => t[0])]);
@@ -246,7 +248,7 @@ async function main() {
   const after = (await db.query('select count(*)::int n, count(distinct name)::int d from teams where name like $1 and name not like $2', [`${TAG} %`, `${TAG} csv%`])).rows[0];
   const moved = (await db.query('select track from teams where name = $1', [TEAMS[0].name])).rows[0]?.track;
   record('U05', 'Re-uploading the file updates tracks instead of duplicating teams',
-    after.n === 40 && after.d === 40 && moved === 'التقنية' && labels.every((l) => l === 'تحديث'),
+    after.n === 40 && after.d === 40 && moved === TRACKS[3] && labels.every((l) => l === 'تحديث'),
     { rowsLabelled: [...new Set(labels)], teamsInDb: after.n, movedTeamTrack: moved });
   // put the moved team back so the planned ranking holds
   await A.setInputFiles('#teamsFile', `${OUT}/teams-main.xlsx`);
@@ -255,7 +257,7 @@ async function main() {
   await A.locator('.upload-panel .alert-success').waitFor({ timeout: 15000 });
 
   // ---- U06 select by track ----
-  const chip = A.locator('.track-chip', { hasText: 'التقنية' });
+  const chip = A.locator('.track-chip', { hasText: TRACKS[3] });
   await chip.click();
   const afterOff = await A.locator('.step').first().innerText();
   await chip.click();
@@ -284,7 +286,7 @@ async function main() {
     const ip = await newIPad(browser);
     dialogs(ip.page, ip.net);
     await ip.page.goto(`${BASE}/judge/${sid}`);
-    await ip.page.fill('#judgeName', `${TAG} محكم ${j + 1}`);
+    await ip.page.selectOption('#judgeName', { index: j + 1 }); // preset names; option 0 is the placeholder
     await ip.page.click('button:has-text("انضمام للجلسة")');
     await ip.page.locator('.judge-team-banner').waitFor({ timeout: 20000 });
     judges.push(ip);
@@ -399,7 +401,7 @@ async function main() {
   for (const tr of TRACKS) trackUi[tr] = await podiumItems(card.locator('.track-card', { has: A.locator(`.track-card__head .track-badge:text-is("${tr}")`) }));
   const overallOk = JSON.stringify(overallUi) === JSON.stringify(expected.overallTop);
   const tracksOk = TRACKS.every((tr) => JSON.stringify(trackUi[tr]) === JSON.stringify(expected.trackTop[tr]));
-  const tie = trackUi['الصحة'].filter((x) => x.startsWith('3:')).length;
+  const tie = trackUi[TRACKS[0]].filter((x) => x.startsWith('3:')).length;
   record('R01', 'Results page shows the correct top 3 overall and in every track (ties share a place)', overallOk && tracksOk && tie === 2,
     { overall: overallUi.map((x) => x.replace(`${TAG} `, '')), perTrack: Object.fromEntries(TRACKS.map((tr) => [tr, trackUi[tr].map((x) => x.replace(`${TAG} `, ''))])), tiedForThirdInHealth: tie });
 

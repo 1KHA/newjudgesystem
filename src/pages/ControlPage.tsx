@@ -3,7 +3,7 @@ import { Link, useNavigate, useParams } from 'react-router-dom';
 import {
   ArrowRight, Users, Send, Scale, FileText, Trophy, Plus, BarChart3, HeartPulse,
   Wifi, WifiOff, RefreshCw, ChevronLeft, ChevronRight, Square, CheckCircle2, Clock, UserRound,
-  Copy, Check, Link2
+  Copy, Check, Link2, Play
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../hooks/useAuth';
@@ -41,6 +41,8 @@ export default function ControlPage() {
   const [session, setSession] = useState<SessionDetail | null>(null);
   const [authorized, setAuthorized] = useState<boolean | null>(null);
   const [currentTeamIndex, setCurrentTeamIndex] = useState(0);
+  /** false until the host starts judging: judges wait and no team is current */
+  const [started, setStarted] = useState(false);
   const [judges, setJudges] = useState<Judge[]>([]);
   const [progress, setProgress] = useState<JudgeProgress>({});
   const [teamAnswers, setTeamAnswers] = useState<TeamAnswerRow[]>([]);
@@ -56,7 +58,7 @@ export default function ControlPage() {
 
   const teams = session?.teams ?? [];
   const questions = session?.questions ?? [];
-  const currentTeam = teams[currentTeamIndex] ?? null;
+  const currentTeam = started ? teams[currentTeamIndex] ?? null : null;
   const teamTracks = session?.teamTracks ?? {};
   const currentTrack = currentTeam ? teamTracks[currentTeam] ?? null : null;
   const tracksInOrder = trackOrder(teams.map((t) => ({ track: teamTracks[t] })));
@@ -119,6 +121,7 @@ export default function ControlPage() {
         setSession(data);
         const idx = data.current_team_id ? Math.max(0, data.teams.indexOf(data.current_team_id)) : 0;
         setCurrentTeamIndex(idx);
+        setStarted(Boolean(data.current_team_id));
         setAuthorized(true);
       } catch (e) {
         console.error('Error loading session:', e);
@@ -211,6 +214,7 @@ export default function ControlPage() {
       // 1. Persist: judges' database channel and poll both pick this up
       await saveCurrentTeam(sessionId, index, team);
       setCurrentTeamIndex(index);
+      setStarted(true);
       // 2. Broadcast: instant path for connected judges
       await announceTeam(team);
     } catch (e) {
@@ -224,7 +228,7 @@ export default function ControlPage() {
   /** Judges who have not answered every question for the team on screen. */
   const unfinishedJudges = () => {
     const total = questions.length;
-    if (!total) return [];
+    if (!total || !currentTeam) return [];  // nothing to finish before judging starts
     return judges.filter((j) => (progress[j.id]?.answered ?? 0) < total);
   };
 
@@ -338,7 +342,7 @@ export default function ControlPage() {
             <div className="card-header">
               <div className="card-title">
                 <div className="card-icon"><Users /></div>
-                <span>الفريق الحالي ({teams.length ? currentTeamIndex + 1 : 0}/{teams.length})</span>
+                <span>الفريق الحالي ({started && teams.length ? currentTeamIndex + 1 : 0}/{teams.length})</span>
               </div>
               {lastBroadcastOk === false && (
                 <span className="badge badge-warning" title="الرسالة الفورية لم تصل، المحكمون سيحصلون على الفريق خلال ثوانٍ عبر المزامنة">
@@ -347,32 +351,57 @@ export default function ControlPage() {
                 </span>
               )}
             </div>
-            <div className="team-display">
-              <div className="team-display__label">يتم تحكيم</div>
-              <div className="team-name">{currentTeam ?? 'لا يوجد'}</div>
-              {currentTrack && <div className="team-display__track">المسار: <b>{currentTrack}</b></div>}
-            </div>
-            <p className="card-desc">
-              {totalQuestions} سؤال لكل فريق. عند الانتقال لفريق يصل للمحكمين فوراً، ومن ينقطع اتصاله يتزامن تلقائياً.
-            </p>
-            <div className="btn-group">
-              <button className="btn btn-secondary" onClick={handlePreviousTeam} disabled={switching}>
-                <ChevronRight />
-                السابق
-              </button>
-              <button className="btn btn-primary" onClick={handleNextTeam} disabled={switching}>
-                التالي
-                <ChevronLeft />
-              </button>
-              <button className="btn btn-outline" onClick={handleResend} disabled={!currentTeam} title="إعادة إرسال الفريق الحالي للمحكمين">
-                <Send />
-                إعادة إرسال
-              </button>
-              <button className="btn btn-danger" onClick={handleEndSession} disabled={ending}>
-                <Square />
-                {ending ? 'جاري الإنهاء...' : 'إنهاء'}
-              </button>
-            </div>
+            {!started ? (
+              <>
+                <div className="team-display">
+                  <div className="team-display__label">لم يبدأ التحكيم بعد</div>
+                  <div className="team-name">{judges.length} محكم في الانتظار</div>
+                  {teams[0] && <div className="team-display__track">أول فريق: <b>{teams[0]}</b></div>}
+                </div>
+                <p className="card-desc">
+                  المحكمون الذين انضموا يرون شاشة الانتظار. عند الضغط على بدء يصلهم الفريق الأول فوراً.
+                </p>
+                <div className="btn-group">
+                  <button className="btn btn-primary btn-lg" onClick={() => goToTeam(0)} disabled={switching || teams.length === 0}>
+                    <Play />
+                    {switching ? 'جاري البدء...' : 'بدء التحكيم'}
+                  </button>
+                  <button className="btn btn-danger" onClick={handleEndSession} disabled={ending}>
+                    <Square />
+                    {ending ? 'جاري الإنهاء...' : 'إنهاء'}
+                  </button>
+                </div>
+              </>
+            ) : (
+              <>
+                <div className="team-display">
+                  <div className="team-display__label">يتم تحكيم</div>
+                  <div className="team-name">{currentTeam ?? 'لا يوجد'}</div>
+                  {currentTrack && <div className="team-display__track">المسار: <b>{currentTrack}</b></div>}
+                </div>
+                <p className="card-desc">
+                  {totalQuestions} سؤال لكل فريق. عند الانتقال لفريق يصل للمحكمين فوراً، ومن ينقطع اتصاله يتزامن تلقائياً.
+                </p>
+                <div className="btn-group">
+                  <button className="btn btn-secondary" onClick={handlePreviousTeam} disabled={switching}>
+                    <ChevronRight />
+                    السابق
+                  </button>
+                  <button className="btn btn-primary" onClick={handleNextTeam} disabled={switching}>
+                    التالي
+                    <ChevronLeft />
+                  </button>
+                  <button className="btn btn-outline" onClick={handleResend} disabled={!currentTeam} title="إعادة إرسال الفريق الحالي للمحكمين">
+                    <Send />
+                    إعادة إرسال
+                  </button>
+                  <button className="btn btn-danger" onClick={handleEndSession} disabled={ending}>
+                    <Square />
+                    {ending ? 'جاري الإنهاء...' : 'إنهاء'}
+                  </button>
+                </div>
+              </>
+            )}
           </div>
 
           {/* Judges */}
