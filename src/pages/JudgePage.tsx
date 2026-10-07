@@ -7,8 +7,9 @@ import {
 import { supabase } from '../lib/supabase';
 import {
   getSessionDetail, getSession, getOrCreateJudge, getJudge, upsertAnswer,
-  getJudgeAnswersForTeam, touchJudge
+  getJudgeAnswersForTeam, getJudgesBySession, touchJudge
 } from '../lib/supabaseService';
+import { JUDGE_NAMES } from '../lib/judgeNames';
 import { normalizeSessionParam } from '../lib/sessionRouting';
 import { OfflineAnswerQueue, browserStorage } from '../lib/offlineQueue';
 import { RealtimeManager } from '../lib/realtimeManager';
@@ -71,6 +72,7 @@ export default function JudgePage() {
   const [judge, setJudge] = useState<StoredJudge | null>(null);
   const [joinError, setJoinError] = useState('');
   const [joining, setJoining] = useState(false);
+  const [joinedNames, setJoinedNames] = useState<ReadonlySet<string>>(new Set());
 
   const [currentTeam, setCurrentTeam] = useState<string | null>(null);
   const [questions, setQuestions] = useState<Question[]>([]);
@@ -124,10 +126,21 @@ export default function JudgePage() {
 
   // ----------------------------------------------------------------- join --
 
+  // Judges are matched by name, so flag names already joined in this session:
+  // picking one takes over that judge's record (meant for switching devices).
+  useEffect(() => {
+    if (phase !== 'join' || !sessionId) return;
+    let cancelled = false;
+    getJudgesBySession(sessionId)
+      .then((rows) => { if (!cancelled) setJoinedNames(new Set(rows.map((j) => j.name))); })
+      .catch(() => undefined); // hint only; joining still works without it
+    return () => { cancelled = true; };
+  }, [phase, sessionId]);
+
   const handleJoin = async () => {
     if (!sessionId || !session) return;
     const name = judgeName.trim();
-    if (!name) { setJoinError('يرجى إدخال اسمك'); return; }
+    if (!name) { setJoinError('يرجى اختيار اسمك من القائمة'); return; }
     setJoining(true);
     setJoinError('');
     try {
@@ -367,18 +380,27 @@ export default function JudgePage() {
 
           <div className="field">
             <label htmlFor="judgeName">اسمك</label>
-            <input
+            <select
               id="judgeName"
-              type="text"
               value={judgeName}
-              onChange={(e) => setJudgeName(e.target.value)}
-              onKeyDown={(e) => e.key === 'Enter' && handleJoin()}
-              placeholder="أدخل اسمك"
-              autoComplete="name"
-              maxLength={60}
+              onChange={(e) => { setJudgeName(e.target.value); setJoinError(''); }}
               style={{ padding: '12px 14px', fontSize: '16px' }}
-            />
+            >
+              <option value="" disabled>اختر اسمك من القائمة</option>
+              {JUDGE_NAMES.map((name) => (
+                <option key={name} value={name}>
+                  {joinedNames.has(name) ? `${name} — انضم مسبقاً` : name}
+                </option>
+              ))}
+            </select>
           </div>
+
+          {joinedNames.has(judgeName) && (
+            <div className="alert alert-warning" role="status">
+              <AlertCircle />
+              <span>هذا الاسم انضم مسبقاً من جهاز آخر. اختره فقط إذا كان اسمك وتريد المتابعة من هذا الجهاز.</span>
+            </div>
+          )}
 
           <button className="btn btn-primary btn-lg btn-block" onClick={handleJoin} disabled={joining}>
             {joining ? <RefreshCw className="spin" /> : <LogIn />}
