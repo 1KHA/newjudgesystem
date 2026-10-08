@@ -487,7 +487,6 @@ export default function JudgePage() {
                           aria-pressed={isSelected}
                         >
                           <div>{choice.text}</div>
-                          <div className="answer-btn__weight">وزن: {choice.weight}</div>
                           {isSelected && <span className="answer-btn__check"><Check /></span>}
                         </button>
                       );

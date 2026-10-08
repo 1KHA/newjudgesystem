@@ -1100,8 +1100,8 @@ textarea {
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   cursor: pointer;
-  font-size: 16px;
-  font-weight: 500;
+  font-size: 18px;
+  font-weight: 700;
   font-family: inherit;
   text-align: center;
   position: relative;
@@ -1117,12 +1117,6 @@ textarea {
   background: var(--primary);
   color: var(--white);
   border-color: var(--primary);
-}
-
-.answer-btn__weight {
-  font-size: 11px;
-  margin-top: 4px;
-  opacity: 0.8;
 }
 
 .answer-btn__check {
