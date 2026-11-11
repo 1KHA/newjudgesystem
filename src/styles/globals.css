@@ -1,72 +1,75 @@
 /* ==========================================================================
-   هاكثون الابتكار — جائزة مايدة محي الدين ناظر للابتكار — نظام التحكيم
-   Global stylesheet built from visual_identity_dar (maroon / gold / sky / cream)
+   هاكثون الطفولة — جمعية إنماء لرعاية الطفولة — نظام التحكيم
+   Global stylesheet built from vi_inmaa (navy / orange / honey / green on cream)
    ========================================================================== */
 
-/* ---- Typography: PingAR LT (self-hosted) ---- */
-@font-face {
-  font-family: 'PingAR';
-  src: url('/fonts/ping-ar-lt-regular.otf') format('opentype');
-  font-weight: 100 500;
-  font-style: normal;
-  font-display: swap;
-}
-
-@font-face {
-  font-family: 'PingAR';
-  src: url('/fonts/ping-ar-lt-regular-Bold.otf') format('opentype');
-  font-weight: 600 900;
-  font-style: normal;
-  font-display: swap;
-}
+/* ---- Typography: Graphik Arabic (self-hosted; commercial licence) ---- */
+@font-face { font-family: 'Graphik Arabic'; font-style: normal; font-display: swap; font-weight: 100; src: url('/fonts/GraphikArabic-Thin.woff2') format('woff2'); }
+@font-face { font-family: 'Graphik Arabic'; font-style: normal; font-display: swap; font-weight: 200; src: url('/fonts/GraphikArabic-ExtraLight.woff2') format('woff2'); }
+@font-face { font-family: 'Graphik Arabic'; font-style: normal; font-display: swap; font-weight: 300; src: url('/fonts/GraphikArabic-Light.woff2') format('woff2'); }
+@font-face { font-family: 'Graphik Arabic'; font-style: normal; font-display: swap; font-weight: 400; src: url('/fonts/GraphikArabic-Regular.woff2') format('woff2'); }
+@font-face { font-family: 'Graphik Arabic'; font-style: normal; font-display: swap; font-weight: 500; src: url('/fonts/GraphikArabic-Medium.woff2') format('woff2'); }
+@font-face { font-family: 'Graphik Arabic'; font-style: normal; font-display: swap; font-weight: 600; src: url('/fonts/GraphikArabic-SemiBold.woff2') format('woff2'); }
+@font-face { font-family: 'Graphik Arabic'; font-style: normal; font-display: swap; font-weight: 700; src: url('/fonts/GraphikArabic-Bold.woff2') format('woff2'); }
+@font-face { font-family: 'Graphik Arabic'; font-style: normal; font-display: swap; font-weight: 900; src: url('/fonts/GraphikArabic-Black.woff2') format('woff2'); }
 
 /* ---- Design tokens ---- */
 :root {
-  /* Brand core */
-  --primary: #80191A;
-  --primary-hover: #9B2526;
-  --primary-dark: #5E1112;
-  --primary-light: #FCE8CA;
-  --primary-tint: #FDF5EA;
-  --gold: #F9D69F;
-  --gold-light: #FDEFD9;
-  --sky: #83BAE4;
-  --sky-light: #E8F2FA;
-  --cream: #FFF6EB;
+  /* Brand core: navy النيلي is the primary */
+  --primary: #22406B;
+  --primary-hover: #182F4E;           /* navy-dark: hover on navy */
+  --primary-dark: #182F4E;            /* dark surfaces inside cards (team banner, top teams) */
+  --primary-light: #DCE5F1;           /* navy tint: badges, spinner track */
+  --primary-tint: #EEF2F8;            /* faint navy: hover and selected rows */
+  --orange: #E2653B;                  /* البرتقالي: accent, focus ring (large/bold text only) */
+  --orange-dark: #BF4922;             /* orange carrying white text (5:1) */
+  --gold: #F0A63B;                    /* العسلي honey: ink text on it, never white */
+  --gold-light: #FCEED9;              /* honey tint */
+  --sky: #70A288;                     /* الأخضر green: ink text on it, never white */
+  --sky-light: #E3EFE8;               /* green tint */
+  --cream: #FBF4EA;
   --accent: var(--gold);
   --accent-light: var(--gold-light);
-  --ink: #3B1516;
+  --ink: #2A2118;
   --white: #FFFFFF;
 
   /* Secondary */
-  --gray: #6B5B57;
-  --amber: #FCD34D;
+  --gray: #6D6155;
+  --amber: #F0A63B;
 
   /* Text */
   --text-primary: var(--ink);
   --text-secondary: var(--gray);
-  --text-muted: #9A8A84;
+  --text-muted: #9C8F80;
 
   /* Surfaces & lines */
   --background: var(--cream);
-  --card: #FFFFFF;
-  --muted: #F6EDE2;
-  --border: #E6D7C5;
+  --card: #FFFBF5;                    /* warm white, lifts cards off the cream */
+  --muted: #F1E7DA;                   /* sand */
+  --border: #E7D9C6;
   --border-color: var(--border);
   --secondary-light: var(--muted);
 
-  /* Status (tint background + dark text of the same hue) */
-  --success: #16A34A;
-  --success-bg: #DCFCE7;
-  --success-text: #166534;
-  --danger: #EF4444;
-  --danger-bg: #FEE2E2;
-  --danger-text: #991B1B;
-  --warning: #F59E0B;
-  --warning-bg: #FEF3C7;
-  --warning-text: #92400E;
-  --info-bg: var(--sky-light);
-  --info-text: #1F4E79;
+  /* Status (tint background + dark text of the same hue).
+     Success uses the brand green; danger is kept clear of the brand orange. */
+  --success: #34654C;
+  --success-hover: #264F3A;
+  --success-bg: #E3EFE8;
+  --success-border: #B5D3C3;
+  --success-text: #264F3A;
+  --danger: #C52020;
+  --danger-hover: #A31A1A;
+  --danger-bg: #FBE6E6;
+  --danger-border: #F0B4B4;
+  --danger-text: #8E1717;
+  --warning: #F0A63B;
+  --warning-bg: #FCEED9;
+  --warning-border: #F3C98B;
+  --warning-text: #935810;
+  --info-bg: var(--primary-tint);
+  --info-border: #C3D1E6;
+  --info-text: var(--primary-dark);
+  --ring: rgba(226, 101, 59, 0.28);   /* orange focus halo */
 
   /* Legacy aliases used by older inline styles */
   --primary-color: var(--primary);
@@ -75,11 +78,11 @@
   --danger-color: var(--danger);
   --warning-color: var(--warning);
 
-  /* Elevation & shape */
-  --shadow-sm: 0 1px 2px 0 rgba(59, 21, 22, 0.06);
-  --shadow-md: 0 4px 10px -2px rgba(59, 21, 22, 0.10);
-  --shadow-lg: 0 12px 24px -6px rgba(59, 21, 22, 0.20);
-  --shadow-glow: 0 0 10px 3px rgba(249, 214, 159, 0.85);
+  /* Elevation & shape (navy-tinted shadows) */
+  --shadow-sm: 0 1px 2px 0 rgba(24, 47, 78, 0.06);
+  --shadow-md: 0 4px 10px -2px rgba(24, 47, 78, 0.10);
+  --shadow-lg: 0 14px 34px -12px rgba(24, 47, 78, 0.30);
+  --shadow-glow: 0 12px 32px -8px rgba(226, 101, 59, 0.45);
   --radius: 0.75rem;
   --radius-sm: 0.5rem;
   --radius-full: 9999px;
@@ -88,7 +91,7 @@
   --header-h: 64px;
   --container-w: 1280px;
 
-  font-family: 'PingAR', 'Tajawal', 'Noto Sans Arabic', 'Arial', sans-serif;
+  font-family: 'Graphik Arabic', 'Segoe UI', Tahoma, sans-serif;
   color-scheme: light;
 }
 
@@ -109,7 +112,7 @@ html {
 }
 
 body {
-  font-family: 'PingAR', 'Tajawal', 'Noto Sans Arabic', 'Arial', sans-serif;
+  font-family: 'Graphik Arabic', 'Segoe UI', Tahoma, sans-serif;
   font-size: 15px;
   line-height: 1.6;
   color: var(--text-primary);
@@ -142,8 +145,8 @@ img {
 }
 
 ::selection {
-  background: var(--primary);
-  color: var(--white);
+  background: rgba(240, 166, 59, 0.45);
+  color: var(--ink);
 }
 
 /* ---- App shell ---- */
@@ -161,7 +164,7 @@ img {
   padding: 24px 20px 48px;
 }
 
-/* ---- Brand header (solid brand maroon, white + gold content) ---- */
+/* ---- Brand header (solid brand navy, white + honey content) ---- */
 .brand-header {
   background: var(--primary);
   color: var(--white);
@@ -169,7 +172,7 @@ img {
   position: sticky;
   top: 0;
   z-index: 50;
-  box-shadow: 0 2px 8px rgba(59, 21, 22, 0.25);
+  box-shadow: 0 2px 8px rgba(24, 47, 78, 0.25);
 }
 
 .brand-header__inner {
@@ -195,41 +198,18 @@ img {
   color: var(--white);
 }
 
-/* Compact lockup: gold bulb mark + two-line wordmark */
+/* Logo in navy top bars */
 .brand-lockup {
   display: flex;
   align-items: center;
-  gap: 10px;
   min-width: 0;
-  color: var(--white);
-}
-
-.brand-lockup__mark {
-  height: 40px;
-  width: auto;
   flex-shrink: 0;
 }
 
-.brand-lockup__text {
-  display: flex;
-  flex-direction: column;
-  min-width: 0;
-  line-height: 1.25;
-}
-
-.brand-lockup__name {
-  font-size: 15px;
-  font-weight: 700;
-  color: var(--white);
-  white-space: nowrap;
-}
-
-.brand-lockup__award {
-  font-size: 11px;
-  color: var(--gold);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+.brand-lockup__logo {
+  height: 40px;
+  width: auto;
+  flex-shrink: 0;
 }
 
 .brand-header__divider {
@@ -265,7 +245,7 @@ img {
   padding: 0 4px;
 }
 
-/* Buttons that sit on the maroon header */
+/* Buttons that sit on the navy header */
 .btn-on-blue {
   background: rgba(255, 255, 255, 0.12);
   color: var(--white);
@@ -381,7 +361,7 @@ img {
 
 /* ---- Panels (soft inner blocks inside cards) ---- */
 .panel {
-  background: var(--white);
+  background: var(--card);
   border: 1px solid var(--border);
   border-radius: var(--radius);
   padding: 16px;
@@ -448,7 +428,7 @@ textarea {
   border-radius: var(--radius-sm);
   font-size: 14px;
   font-family: inherit;
-  background: var(--white);
+  background: var(--card);
   color: var(--text-primary);
   transition: border-color 0.15s, box-shadow 0.15s;
 }
@@ -463,7 +443,7 @@ select:focus,
 textarea:focus {
   outline: none;
   border-color: var(--primary);
-  box-shadow: 0 0 0 3px var(--primary-light);
+  box-shadow: 0 0 0 3px var(--ring);
 }
 
 input[type='checkbox'] {
@@ -547,7 +527,7 @@ textarea {
 }
 
 .btn-secondary {
-  background: var(--white);
+  background: var(--card);
   color: var(--text-primary);
   border-color: var(--border);
 }
@@ -575,7 +555,7 @@ textarea {
 }
 
 .btn-success:hover {
-  background: #15803D;
+  background: var(--success-hover);
   color: var(--white);
 }
 
@@ -585,7 +565,7 @@ textarea {
 }
 
 .btn-danger:hover {
-  background: #DC2626;
+  background: var(--danger-hover);
   color: var(--white);
 }
 
@@ -679,7 +659,7 @@ textarea {
 }
 
 .icon-btn--success:hover {
-  background: #15803D;
+  background: var(--success-hover);
   color: var(--white);
 }
 
@@ -783,9 +763,9 @@ textarea {
   border-color: rgba(255, 255, 255, 0.25);
 }
 
-.brand-header .conn-chip--connected svg    { color: #86EFAC; }
+.brand-header .conn-chip--connected svg    { color: #A9D4BE; }
 .brand-header .conn-chip--reconnecting svg { color: var(--amber); }
-.brand-header .conn-chip--disconnected svg { color: #FCA5A5; }
+.brand-header .conn-chip--disconnected svg { color: #F5B3B3; }
 
 /* ---- Stepper (setup / control guides) ---- */
 .stepper {
@@ -877,7 +857,7 @@ textarea {
 
 /* ---- Selectable team tiles (setup) ---- */
 .team-tile {
-  background: var(--white);
+  background: var(--card);
   border: 1px solid var(--border);
   border-radius: var(--radius);
   padding: 12px;
@@ -893,7 +873,7 @@ textarea {
   background: var(--primary);
   border-color: var(--primary);
   color: var(--white);
-  box-shadow: 0 4px 10px rgba(128, 25, 26, 0.25);
+  box-shadow: 0 4px 10px rgba(34, 64, 107, 0.25);
 }
 
 .team-tile__row {
@@ -934,7 +914,7 @@ textarea {
   justify-content: space-between;
   gap: 12px;
   padding: 12px 14px;
-  background: var(--white);
+  background: var(--card);
   border: 1px solid var(--border);
   border-radius: var(--radius);
   margin-bottom: 8px;
@@ -1010,7 +990,7 @@ textarea {
 }
 
 .answer-item {
-  background: var(--white);
+  background: var(--card);
   border: 1px solid var(--border);
   border-inline-start: 4px solid var(--primary);
   padding: 14px;
@@ -1037,7 +1017,7 @@ textarea {
 }
 
 .question-block {
-  background: var(--white);
+  background: var(--card);
   border: 1px solid var(--border);
   border-inline-start: 4px solid var(--primary);
   border-radius: var(--radius);
@@ -1075,7 +1055,7 @@ textarea {
 
 .choice-chip {
   padding: 8px 12px;
-  background: var(--white);
+  background: var(--card);
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   font-size: 14px;
@@ -1095,7 +1075,7 @@ textarea {
 
 .answer-btn {
   padding: 14px 18px;
-  background: var(--white);
+  background: var(--card);
   color: var(--text-primary);
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
@@ -1126,7 +1106,7 @@ textarea {
   width: 22px;
   height: 22px;
   border-radius: 50%;
-  background: var(--white);
+  background: var(--card);
   color: var(--primary);
   display: inline-flex;
   align-items: center;
@@ -1212,17 +1192,17 @@ textarea {
 }
 
 .stat-card {
-  background: var(--white);
+  background: var(--card);
   border: 1px solid var(--border);
   border-radius: var(--radius);
   padding: 14px 16px;
   text-align: center;
 }
 
-.stat-card--blue  { background: linear-gradient(135deg, #FFFFFF, var(--sky-light)); }
-.stat-card--green { background: linear-gradient(135deg, #FFFFFF, #F0FDF4); }
-.stat-card--cyan  { background: linear-gradient(135deg, #FFFFFF, #ECFEFF); }
-.stat-card--yellow{ background: linear-gradient(135deg, #FFFFFF, var(--gold-light)); }
+.stat-card--blue  { background: linear-gradient(135deg, var(--card), var(--primary-tint)); }
+.stat-card--green { background: linear-gradient(135deg, var(--card), var(--sky-light)); }
+.stat-card--cyan  { background: linear-gradient(135deg, var(--card), #FBE7DF); }
+.stat-card--yellow{ background: linear-gradient(135deg, var(--card), var(--gold-light)); }
 
 .stat-value {
   font-size: 26px;
@@ -1241,7 +1221,7 @@ textarea {
 .progress {
   width: 100%;
   height: 8px;
-  background: rgba(128, 25, 26, 0.1);
+  background: rgba(34, 64, 107, 0.1);
   border-radius: 4px;
   overflow: hidden;
 }
@@ -1292,10 +1272,10 @@ textarea {
   margin-top: 2px;
 }
 
-.alert-danger  { background: var(--danger-bg);  color: var(--danger-text);  border-color: #FCA5A5; }
-.alert-warning { background: var(--warning-bg); color: var(--warning-text); border-color: #FCD34D; }
-.alert-success { background: var(--success-bg); color: var(--success-text); border-color: #86EFAC; }
-.alert-info    { background: var(--info-bg);   color: var(--info-text);   border-color: #B9D6EE; }
+.alert-danger  { background: var(--danger-bg);  color: var(--danger-text);  border-color: var(--danger-border); }
+.alert-warning { background: var(--warning-bg); color: var(--warning-text); border-color: var(--warning-border); }
+.alert-success { background: var(--success-bg); color: var(--success-text); border-color: var(--success-border); }
+.alert-info    { background: var(--info-bg);   color: var(--info-text);   border-color: var(--info-border); }
 
 /* ---- Empty & loading states ---- */
 .empty-state {
@@ -1358,15 +1338,15 @@ textarea {
   gap: 24px;
   padding: 24px;
   background:
-    radial-gradient(circle at 85% 10%, rgba(249, 214, 159, 0.16), transparent 45%),
-    radial-gradient(circle at 15% 90%, rgba(59, 21, 22, 0.45), transparent 50%),
+    radial-gradient(circle at 85% 10%, rgba(255, 255, 255, 0.07), transparent 45%),
+    radial-gradient(circle at 15% 90%, rgba(13, 28, 48, 0.55), transparent 50%),
     var(--primary);
 }
 
 .auth-card {
   width: 100%;
   max-width: 440px;
-  background: var(--white);
+  background: var(--card);
   border-radius: 20px;
   padding: 36px 32px;
   box-shadow: var(--shadow-lg);
@@ -1378,7 +1358,7 @@ textarea {
 }
 
 .auth-page__logo {
-  width: min(260px, 70vw);
+  width: min(300px, 72vw);
   height: auto;
   flex-shrink: 0;
   margin-bottom: clamp(16px, 5vh, 48px);
@@ -1401,8 +1381,8 @@ textarea {
   min-height: 100vh;
   padding: 24px 16px 48px;
   background:
-    radial-gradient(circle at 85% 0%, rgba(249, 214, 159, 0.16), transparent 45%),
-    radial-gradient(circle at 10% 100%, rgba(59, 21, 22, 0.45), transparent 50%),
+    radial-gradient(circle at 85% 0%, rgba(255, 255, 255, 0.07), transparent 45%),
+    radial-gradient(circle at 10% 100%, rgba(13, 28, 48, 0.55), transparent 50%),
     var(--primary);
 }
 
@@ -1440,7 +1420,7 @@ textarea {
 }
 
 .judge-card {
-  background: var(--white);
+  background: var(--card);
   border-radius: 20px;
   padding: 28px;
   box-shadow: var(--shadow-lg);
@@ -1448,7 +1428,7 @@ textarea {
 }
 
 .judge-team-banner {
-  background: var(--ink);
+  background: var(--primary-dark);
   color: var(--white);
   padding: 20px;
   border-radius: var(--radius);
@@ -1476,7 +1456,7 @@ textarea {
 
 .judge-waiting__done {
   background: var(--success-bg);
-  border: 1px solid #86EFAC;
+  border: 1px solid var(--success-border);
   color: var(--success-text);
   padding: 24px;
   border-radius: var(--radius);
@@ -1565,7 +1545,7 @@ textarea {
 .link-box {
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   font-size: 13px;
-  background: var(--white);
+  background: var(--card);
   padding: 10px 12px;
   border-radius: var(--radius-sm);
   border: 1px solid var(--border);
@@ -1609,7 +1589,7 @@ textarea {
 }
 
 .top-teams {
-  background: var(--ink);
+  background: var(--primary-dark);
   color: var(--white);
   padding: 20px;
   border-radius: var(--radius);
@@ -1632,7 +1612,7 @@ textarea {
 }
 
 .top-team {
-  background: var(--white);
+  background: var(--card);
   color: var(--text-primary);
   padding: 16px;
   border-radius: var(--radius-sm);
@@ -1680,7 +1660,7 @@ textarea {
 }
 
 .team-result {
-  background: var(--white);
+  background: var(--card);
   border: 1px solid var(--border);
   border-inline-start: 4px solid var(--primary);
   border-radius: var(--radius);
@@ -1805,7 +1785,7 @@ textarea {
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #D9C6B1;
+  background: #CDB99F;
   border-radius: 4px;
 }
 
@@ -1866,11 +1846,7 @@ textarea {
     display: none;
   }
 
-  .brand-lockup__award {
-    display: none;
-  }
-
-  .brand-lockup__mark {
+  .brand-lockup__logo {
     height: 34px;
   }
 
@@ -1979,7 +1955,7 @@ textarea {
   padding: 6px 14px;
   border-radius: var(--radius-full);
   border: 1px solid var(--border);
-  background: var(--white);
+  background: var(--card);
   color: var(--text-primary);
   font-family: inherit;
   font-size: 13px;
@@ -2071,7 +2047,7 @@ textarea {
   gap: 8px;
   padding: 8px 12px;
   margin-bottom: 12px;
-  background: var(--white);
+  background: var(--card);
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   font-size: 14px;
@@ -2108,7 +2084,7 @@ textarea {
 .upload-preview__table {
   max-height: 300px;
   overflow-y: auto;
-  background: var(--white);
+  background: var(--card);
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   -webkit-overflow-scrolling: touch;
@@ -2135,7 +2111,7 @@ textarea {
   align-items: center;
   gap: 12px;
   padding: 10px 14px;
-  background: var(--white);
+  background: var(--card);
   border: 1px solid var(--border);
   border-inline-start: 4px solid var(--border);
   border-radius: var(--radius-sm);

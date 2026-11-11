@@ -9,7 +9,6 @@ import {
   getSessionDetail, getSession, getOrCreateJudge, getJudge, upsertAnswer,
   getJudgeAnswersForTeam, getJudgesBySession, touchJudge
 } from '../lib/supabaseService';
-import { JUDGE_NAMES } from '../lib/judgeNames';
 import { normalizeSessionParam } from '../lib/sessionRouting';
 import { OfflineAnswerQueue, browserStorage } from '../lib/offlineQueue';
 import { RealtimeManager } from '../lib/realtimeManager';
@@ -33,6 +32,9 @@ const PRESENCE_MS = 60_000;
 interface StoredJudge { name: string; token: string; id: string }
 
 const judgeStorageKey = (sessionId: string) => `judge_${sessionId}`;
+
+/** Judges are matched by name: stray or doubled spaces must not split one judge into two. */
+const normalizeName = (name: string) => name.trim().replace(/\s+/g, ' ');
 
 function readStoredJudge(sessionId: string): StoredJudge | null {
   try {
@@ -116,8 +118,8 @@ export default function JudgePage() {
 
   // ----------------------------------------------------------------- join --
 
-  // Judges are matched by name, so flag names already joined in this session:
-  // picking one takes over that judge's record (meant for switching devices).
+  // Judges are matched by name, so warn when the typed name already joined this
+  // session: using it takes over that judge's record (meant for switching devices).
   useEffect(() => {
     if (phase !== 'join' || !sessionId) return;
     let cancelled = false;
@@ -129,8 +131,8 @@ export default function JudgePage() {
 
   const handleJoin = async () => {
     if (!sessionId || !session) return;
-    const name = judgeName.trim();
-    if (!name) { setJoinError('يرجى اختيار اسمك من القائمة'); return; }
+    const name = normalizeName(judgeName);
+    if (!name) { setJoinError('يرجى إدخال اسمك'); return; }
     setJoining(true);
     setJoinError('');
     try {
@@ -370,25 +372,23 @@ export default function JudgePage() {
 
           <div className="field">
             <label htmlFor="judgeName">اسمك</label>
-            <select
+            <input
               id="judgeName"
+              type="text"
               value={judgeName}
               onChange={(e) => { setJudgeName(e.target.value); setJoinError(''); }}
+              onKeyDown={(e) => e.key === 'Enter' && handleJoin()}
+              placeholder="أدخل اسمك الكامل"
+              autoComplete="off"
+              maxLength={60}
               style={{ padding: '12px 14px', fontSize: '16px' }}
-            >
-              <option value="" disabled>اختر اسمك من القائمة</option>
-              {JUDGE_NAMES.map((name) => (
-                <option key={name} value={name}>
-                  {joinedNames.has(name) ? `${name} — انضم مسبقاً` : name}
-                </option>
-              ))}
-            </select>
+            />
           </div>
 
-          {joinedNames.has(judgeName) && (
+          {joinedNames.has(normalizeName(judgeName)) && (
             <div className="alert alert-warning" role="status">
               <AlertCircle />
-              <span>هذا الاسم انضم مسبقاً من جهاز آخر. اختره فقط إذا كان اسمك وتريد المتابعة من هذا الجهاز.</span>
+              <span>هذا الاسم انضم مسبقاً لهذه الجلسة. تابع فقط إذا كان اسمك وتريد المتابعة من هذا الجهاز، وإلا أضف اسم العائلة لتمييزه.</span>
             </div>
           )}
 

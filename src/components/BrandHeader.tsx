@@ -10,7 +10,7 @@ interface BrandHeaderProps {
 }
 
 /**
- * Solid brand-maroon top bar with the هاكثون الابتكار lockup.
+ * Solid brand-navy top bar with the هاكثون الطفولة logo.
  * Used on every admin page so the identity is consistent across the app.
  */
 export default function BrandHeader({ title, children }: BrandHeaderProps) {

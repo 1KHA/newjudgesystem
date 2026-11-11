@@ -1,20 +1,16 @@
-export const BRAND_NAME = 'هاكثون الابتكار';
-export const BRAND_AWARD = 'جائزة مايدة محي الدين ناظر للابتكار';
+export const BRAND_NAME = 'هاكثون الطفولة';
+export const BRAND_ORG = 'جمعية إنماء لرعاية الطفولة';
 
-/** Full logo (white + gold) — only for maroon backgrounds. */
+/** Full logo, cream wordmark — only for navy backgrounds (auth and judge pages). */
 export function BrandLogo({ className }: { className?: string }) {
-  return <img src="/brand/logo.png" alt={`${BRAND_NAME} — ${BRAND_AWARD}`} className={className} />;
+  return <img src="/brand/logo-light.svg" alt={`${BRAND_NAME} — ${BRAND_ORG}`} className={className} />;
 }
 
-/** Compact gold bulb mark + two-line wordmark for maroon top bars. */
+/** The same logo sized for navy top bars. */
 export default function BrandLockup() {
   return (
     <span className="brand-lockup">
-      <img src="/brand/mark.png" alt="" aria-hidden="true" className="brand-lockup__mark" />
-      <span className="brand-lockup__text">
-        <span className="brand-lockup__name">{BRAND_NAME}</span>
-        <span className="brand-lockup__award">{BRAND_AWARD}</span>
-      </span>
+      <img src="/brand/logo-light.svg" alt={BRAND_NAME} className="brand-lockup__logo" />
     </span>
   );
 }
