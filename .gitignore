@@ -54,3 +54,4 @@ stress/backups/
 stress/*.log
 visual_identity_dar
 vi_inmaa
+db_backup
