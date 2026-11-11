@@ -29,10 +29,11 @@ export interface DraftSection {
 
 let idCounter = 0;
 
-// Different default weights: equal weights would give every answer full marks
+// Different default weights (equal weights would give every answer full marks),
+// rising like the choices "add choice" appends, so the scale stays 1, 2, 3...
 export const newQuestion = (): DraftQuestion => ({
   text: '',
-  choices: [{ text: '', weight: 1 }, { text: '', weight: 0 }]
+  choices: [{ text: '', weight: 1 }, { text: '', weight: 2 }]
 });
 
 /** A fresh section; `index` is its 0-based position (used for the default name). */

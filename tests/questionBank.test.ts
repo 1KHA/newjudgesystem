@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  newSection, draftProblems, draftToBankQuestions, groupBySection, orderBySection, type DraftSection
+  newQuestion, newSection, draftProblems, draftToBankQuestions, groupBySection, orderBySection, type DraftSection
 } from '../src/lib/questionBank.ts';
 import type { Question } from '../src/types/index.ts';
 
@@ -31,6 +31,10 @@ test('missing names, zero weight, empty question and bad choices are reported', 
   assert.ok(problems.some((p) => p.includes('أكبر من صفر')));
   assert.ok(problems.some((p) => p.includes('نص السؤال مطلوب')));
   assert.ok(problems.some((p) => p.includes('الوزن نفسه')));
+});
+
+test('a new question starts with rising choice weights (1, 2), like the choices added after them', () => {
+  assert.deepEqual(newQuestion().choices.map((c) => c.weight), [1, 2]);
 });
 
 test('a draft without any question is rejected', () => {
